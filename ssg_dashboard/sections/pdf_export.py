@@ -7,10 +7,16 @@ from datetime import date, datetime
 import pandas as pd
 from fpdf import FPDF
 
-_M       = 15    # page margin mm
-_CW      = 180   # content width mm
-_ROW_H   = 6     # table row height mm
-_HEAD_H  = 7     # header row height mm
+_M      = 15    # page margin mm
+_CW     = 267   # content width for A4 landscape (297 - 2×15)
+_ROW_H  = 6     # table row height mm
+_HEAD_H = 7     # header row height mm
+
+# Explicit chart palette — avoids kaleido colour rendering issues with px defaults
+_CHART_COLORS = [
+    "#4472C4", "#ED7D31", "#70AD47", "#FFC000",
+    "#5B9BD5", "#A9D18E", "#FF0000", "#7030A0",
+]
 
 _COL_HEADER_BG  = (45,  85, 135)
 _COL_HEADER_FG  = (255, 255, 255)
@@ -66,7 +72,7 @@ def _safe(text: str, family: str) -> str:
 
 class _PDF(FPDF):
     def __init__(self, show: str, family: str):
-        super().__init__()
+        super().__init__(orientation="L", format="A4")
         self._show   = show
         self._family = family
         self.set_margins(_M, _M, _M)
@@ -173,18 +179,26 @@ def _stats_table_data(stats_df: pd.DataFrame, cat_cols: list[str]):
 
 def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
     try:
-        import plotly.express as px
+        import plotly.graph_objects as go
         plot_df = stats_df.drop(index="TOTAL", errors="ignore").copy()
-        fig = px.bar(
-            plot_df, x="Performance Date", y=cat_cols, barmode="stack",
-            title="Ticket categories per night",
-            labels={"value": "Tickets", "variable": "Category"},
-        )
+        fig = go.Figure()
+        for i, cat in enumerate(cat_cols):
+            fig.add_trace(go.Bar(
+                name=cat,
+                x=plot_df["Performance Date"].astype(str),
+                y=plot_df[cat],
+                marker_color=_CHART_COLORS[i % len(_CHART_COLORS)],
+            ))
         fig.update_layout(
-            width=900, height=420,
+            barmode="stack",
+            title="Ticket categories per night",
+            xaxis_title="Performance Date",
+            yaxis_title="Tickets",
+            legend_title="Category",
+            width=1400, height=420,
             paper_bgcolor="white", plot_bgcolor="white",
-            margin=dict(l=40, r=20, t=50, b=80),
-            font=dict(family="Arial, Helvetica, sans-serif", size=11),
+            margin=dict(l=50, r=160, t=55, b=80),
+            font=dict(family="Arial, Helvetica, sans-serif", size=12),
         )
         return fig.to_image(format="png", scale=2, engine="kaleido")
     except Exception:
@@ -244,9 +258,9 @@ def build_reconciliation_pdf(
         net   = sum(t["net"]   for t in show_txns)
         _metric_strip(pdf, [
             ("Transactions", str(len(show_txns))),
-            ("PayPal Gross",  f"€{gross:,.2f}"),
-            ("PayPal Fees",   f"€{fees:,.2f}"),
-            ("PayPal Net",    f"€{net:,.2f}"),
+            ("Gross",  f"€{gross:,.2f}"),
+            ("Fees",   f"€{fees:,.2f}"),
+            ("Net",    f"€{net:,.2f}"),
         ], _COL_ALT_BG)
 
     # Totals table
@@ -256,7 +270,7 @@ def build_reconciliation_pdf(
         _draw_table(pdf,
                     headers=["Performance Date", "Txns", "Gross (€)", "Fees (€)", "Net (€)"],
                     rows=rows,
-                    col_widths=[65.0, 20.0, 33.0, 31.0, 31.0],
+                    col_widths=[97.0, 22.0, 50.0, 49.0, 49.0],
                     alignments=["L", "R", "R", "R", "R"],
                     total_row_idx=total_idx)
     else:
@@ -271,8 +285,8 @@ def build_reconciliation_pdf(
     cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
 
     if not stats_df.empty and cat_cols:
-        date_w  = 55.0
-        total_w = 22.0
+        date_w  = 75.0
+        total_w = 25.0
         cat_w   = round((_CW - date_w - total_w) / len(cat_cols), 1)
         rows, total_idx = _stats_table_data(stats_df, cat_cols)
         _draw_table(pdf,
@@ -284,7 +298,7 @@ def build_reconciliation_pdf(
 
         png = _chart_png(stats_df, cat_cols)
         if png:
-            if pdf.get_y() > 200:
+            if pdf.get_y() > pdf.h - 100:
                 pdf.add_page()
             pdf.image(io.BytesIO(png), x=_M, w=_CW)
             pdf.ln(4)
