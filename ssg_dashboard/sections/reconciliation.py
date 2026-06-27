@@ -14,7 +14,7 @@ from ..persistence.paypal_cache import (
     get_paypal_transactions,
     load_paypal_cache,
 )
-from ..persistence.settings import load_paypal_settings
+from ..persistence.settings import load_capacities, load_paypal_settings
 from .pdf_export import build_reconciliation_pdf
 
 
@@ -424,6 +424,8 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                     show_txns  = show_txns,
                     tt_gross   = tt_gross,
                     pp_gross   = pp_gross,
+                    show_df    = show_df,
+                    capacity   = int(load_capacities().get(show, 0)),
                 )
                 safe_show = show.replace(" ", "_").replace("/", "-")
                 st.download_button(

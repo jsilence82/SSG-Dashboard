@@ -177,6 +177,78 @@ def _stats_table_data(stats_df: pd.DataFrame, cat_cols: list[str]):
     return rows, total_idx
 
 
+def _pie_png(show_df: pd.DataFrame) -> bytes | None:
+    try:
+        import plotly.graph_objects as go
+        if "category" not in show_df.columns:
+            return None
+        by_cat = (show_df.groupby("category", as_index=False)
+                  .agg(tickets=("quantity", "sum"))
+                  .sort_values("tickets", ascending=False))
+        if by_cat.empty:
+            return None
+        n      = len(by_cat)
+        colors = (_CHART_COLORS * ((n + len(_CHART_COLORS) - 1) // len(_CHART_COLORS)))[:n]
+        fig    = go.Figure(data=[go.Pie(
+            labels=by_cat["category"],
+            values=by_cat["tickets"],
+            marker=dict(colors=colors),
+            hole=0.25,
+            textinfo="label+percent+value",
+            textfont=dict(size=12),
+        )])
+        fig.update_layout(
+            width=700, height=480,
+            paper_bgcolor="white",
+            margin=dict(l=20, r=20, t=20, b=20),
+            font=dict(family="Arial, Helvetica, sans-serif", size=12),
+            legend=dict(orientation="v", x=1.0, y=0.5),
+        )
+        return fig.to_image(format="png", scale=2, engine="kaleido")
+    except Exception:
+        return None
+
+
+def _trend_png(show_df: pd.DataFrame) -> bytes | None:
+    try:
+        import plotly.graph_objects as go
+        if "date" not in show_df.columns or not show_df["date"].notna().any():
+            return None
+        ts = (show_df.dropna(subset=["date"])
+              .assign(day=lambda d: d["date"].dt.normalize())
+              .groupby("day", as_index=False)
+              .agg(tickets=("quantity", "sum"))
+              .sort_values("day"))
+        if ts.empty:
+            return None
+        ts["day_number"] = (ts["day"] - ts["day"].min()).dt.days
+        ts["cumulative"] = ts["tickets"].cumsum()
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=ts["day_number"],
+            y=ts["cumulative"],
+            mode="lines+markers",
+            name="Cumulative tickets",
+            line=dict(color=_CHART_COLORS[0], width=2),
+            marker=dict(size=6, color=_CHART_COLORS[0]),
+            fill="tozeroy",
+            fillcolor="rgba(68,114,196,0.15)",
+        ))
+        fig.update_layout(
+            title="Cumulative ticket sales",
+            xaxis_title="Days since first sale",
+            yaxis_title="Total tickets sold",
+            xaxis=dict(dtick=1, tickmode="linear"),
+            width=1400, height=420,
+            paper_bgcolor="white", plot_bgcolor="white",
+            margin=dict(l=60, r=40, t=55, b=60),
+            font=dict(family="Arial, Helvetica, sans-serif", size=12),
+        )
+        return fig.to_image(format="png", scale=2, engine="kaleido")
+    except Exception:
+        return None
+
+
 def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
     try:
         import plotly.graph_objects as go
@@ -233,6 +305,8 @@ def build_reconciliation_pdf(
     show_txns: list[dict],
     tt_gross: float | None = None,
     pp_gross: float | None = None,
+    show_df: pd.DataFrame | None = None,
+    capacity: int = 0,
 ) -> bytes:
     pdf = _PDF(show, "Helvetica")  # placeholder; overridden after font registration
     family = _register_fonts(pdf)
@@ -247,7 +321,7 @@ def build_reconciliation_pdf(
     pdf.set_font(family, "", 10)
     pdf.set_text_color(*_COL_MUTED)
     pdf.cell(0, 6, f"Production: {show}",                                          new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, pdf._f(f"PayPal date range: {pp_start}  →  {pp_end}"),    new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, pdf._f(f"Date range: {pp_start}  →  {pp_end}"),    new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}",    new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
@@ -326,5 +400,100 @@ def build_reconciliation_pdf(
         pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
         pdf.multi_cell(0, 6, pdf._f(status))
         pdf.set_text_color(*_COL_BODY)
+
+    # ── Analytics pages (only when show_df provided) ─────────────────────────
+    if show_df is not None and not show_df.empty:
+        pdf.add_page()
+
+        # Left column: category pie chart
+        # Right column: yield & capacity metrics
+        pie_w   = 125.0
+        right_x = _M + pie_w + 7
+
+        _section(pdf, "Ticket Category Breakdown")
+        y_top = pdf.get_y()
+
+        pie_png = _pie_png(show_df)
+        if pie_png:
+            pdf.image(io.BytesIO(pie_png), x=_M, y=y_top, w=pie_w)
+
+        # Yield block in right column, aligned to same y_top
+        pdf.set_xy(right_x, y_top)
+        right_w = _CW - pie_w - 7
+
+        def _right_cell(label: str, value: str, fill: tuple, bold: bool = False) -> None:
+            pdf.set_fill_color(*fill)
+            pdf.set_draw_color(*_COL_BORDER)
+            pdf.set_font(family, "", 8)
+            pdf.set_text_color(*_COL_MUTED)
+            pdf.cell(right_w, 5, label, border=1, fill=True, align="C",
+                     new_x="LEFT", new_y="NEXT")
+            pdf.set_font(family, "B" if bold else "", 11)
+            pdf.set_text_color(*_COL_BODY)
+            pdf.cell(right_w, 8, pdf._f(value), border=1, fill=True, align="C",
+                     new_x="LEFT", new_y="NEXT")
+            pdf.set_xy(right_x, pdf.get_y() + 1)
+
+        total_tickets = int(show_df["quantity"].sum()) if "quantity" in show_df.columns else 0
+        total_revenue = show_df["revenue"].sum() if "revenue" in show_df.columns else 0.0
+
+        pdf.set_xy(right_x, y_top)
+        pdf.set_font(family, "B", 11)
+        pdf.set_text_color(*_COL_SECTION_FG)
+        pdf.cell(right_w, 8, "Yield & Capacity", new_x="LEFT", new_y="NEXT")
+        pdf.set_draw_color(*_COL_BORDER)
+        pdf.line(right_x, pdf.get_y(), right_x + right_w, pdf.get_y())
+        pdf.set_xy(right_x, pdf.get_y() + 4)
+        pdf.set_text_color(*_COL_BODY)
+
+        _right_cell("Total Tickets Sold", str(total_tickets), _COL_ALT_BG)
+        _right_cell("Total Revenue",      f"€{total_revenue:,.2f}", _COL_WHITE)
+
+        if capacity > 0:
+            sell_through = total_tickets / capacity * 100
+            rev_per_seat = total_revenue / capacity
+            _right_cell("Capacity",       str(capacity),            _COL_ALT_BG)
+            _right_cell("Sell-through",   f"{sell_through:.1f}%",   _COL_WHITE, bold=True)
+            _right_cell("Revenue / Seat", f"€{rev_per_seat:.2f}",   _COL_ALT_BG)
+
+            # Capacity fill bar spanning the right column
+            bar_y = pdf.get_y() + 3
+            bar_h = 9
+            fill_w = right_w * min(sell_through, 100.0) / 100.0
+            bar_color = (70, 140, 70) if sell_through >= 95 else (70, 130, 180)
+            pdf.set_fill_color(210, 210, 210)
+            pdf.set_draw_color(*_COL_BORDER)
+            pdf.rect(right_x, bar_y, right_w, bar_h, "FD")
+            pdf.set_fill_color(*bar_color)
+            pdf.rect(right_x, bar_y, fill_w, bar_h, "F")
+            pdf.set_xy(right_x, bar_y)
+            pdf.set_font(family, "B", 8)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(right_w, bar_h,
+                     f"{sell_through:.1f}% sold  ({total_tickets} / {capacity} seats)",
+                     align="C")
+            pdf.set_text_color(*_COL_BODY)
+
+        # Advance past the pie chart height before the next section
+        pie_bottom = y_top + (pie_w * 480 / 700)  # derived from 700×480px aspect ratio
+        if pdf.get_y() < pie_bottom:
+            pdf.set_y(pie_bottom)
+        pdf.ln(6)
+
+        # Sales trend — full width (start a new page if little room remains)
+        if pdf.get_y() > pdf.h - 110:
+            pdf.add_page()
+        _section(pdf, "Sales Trend")
+        trend_png = _trend_png(show_df)
+        if trend_png:
+            if pdf.get_y() > pdf.h - 90:
+                pdf.add_page()
+            pdf.image(io.BytesIO(trend_png), x=_M, w=_CW)
+        else:
+            pdf.set_font(family, "", 9)
+            pdf.set_text_color(*_COL_MUTED)
+            pdf.cell(0, 8, "No sale-date data available for trend chart.",
+                     new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(*_COL_BODY)
 
     return bytes(pdf.output())
