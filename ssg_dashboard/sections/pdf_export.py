@@ -383,24 +383,6 @@ def build_reconciliation_pdf(
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
-    # Reconciliation check
-    if tt_gross is not None and pp_gross is not None:
-        _section(pdf, "PayPal Reconciliation Check")
-        diff   = round(pp_gross - tt_gross, 2)
-        passed = abs(diff) < 0.02
-        _metric_strip(pdf, [
-            ("Ticket Tailor Gross", f"€{tt_gross:,.2f}"),
-            ("PayPal Gross",        f"€{pp_gross:,.2f}"),
-            ("Difference",          f"€{diff:,.2f}"),
-        ], _COL_PASS_BG if passed else _COL_FAIL_BG)
-
-        status = ("Reconciliation passed — values match." if passed else
-                  f"Difference of €{diff:.2f}. Check for refunds or transactions outside the date window.")
-        pdf.set_font(family, "B" if passed else "", 9)
-        pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
-        pdf.multi_cell(0, 6, pdf._f(status))
-        pdf.set_text_color(*_COL_BODY)
-
     # ── Analytics pages (only when show_df provided) ─────────────────────────
     if show_df is not None and not show_df.empty:
         pdf.add_page()
@@ -489,11 +471,56 @@ def build_reconciliation_pdf(
             if pdf.get_y() > pdf.h - 90:
                 pdf.add_page()
             pdf.image(io.BytesIO(trend_png), x=_M, w=_CW)
+            pdf.ln(4)
         else:
             pdf.set_font(family, "", 9)
             pdf.set_text_color(*_COL_MUTED)
             pdf.cell(0, 8, "No sale-date data available for trend chart.",
                      new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*_COL_BODY)
+            pdf.ln(4)
+
+        # Trend summary stats table (mirrors the analytics tab)
+        if "date" in show_df.columns and show_df["date"].notna().any():
+            ts = (show_df.dropna(subset=["date"])
+                  .assign(day=lambda d: d["date"].dt.normalize())
+                  .groupby("day", as_index=False)
+                  .agg(tickets=("quantity", "sum"))
+                  .sort_values("day"))
+            if not ts.empty:
+                ts["day_number"] = (ts["day"] - ts["day"].min()).dt.days
+                peak = ts.loc[ts["tickets"].idxmax()]
+                _draw_table(pdf,
+                    headers=["First Sale", "Last Sale", "Selling Window",
+                             "Peak Day", "Peak Tickets"],
+                    rows=[[
+                        str(ts["day"].min().date()),
+                        str(ts["day"].max().date()),
+                        f"{int(ts['day_number'].max()) + 1} days",
+                        f"Day {int(peak['day_number'])}  ({peak['day'].date()})",
+                        str(int(peak["tickets"])),
+                    ]],
+                    col_widths=[48.0, 48.0, 36.0, 85.0, 50.0],
+                    alignments=["L", "L", "R", "L", "R"],
+                )
+
+    # PayPal Reconciliation Check — always last
+    if tt_gross is not None and pp_gross is not None:
+        if pdf.get_y() > pdf.h - 80:
+            pdf.add_page()
+        _section(pdf, "PayPal Reconciliation Check")
+        diff   = round(pp_gross - tt_gross, 2)
+        passed = abs(diff) < 0.02
+        _metric_strip(pdf, [
+            ("Ticket Tailor Gross", f"€{tt_gross:,.2f}"),
+            ("PayPal Gross",        f"€{pp_gross:,.2f}"),
+            ("Difference",          f"€{diff:,.2f}"),
+        ], _COL_PASS_BG if passed else _COL_FAIL_BG)
+        status = ("Reconciliation passed — values match." if passed else
+                  f"Difference of €{diff:.2f}. Check for refunds or transactions outside the date window.")
+        pdf.set_font(family, "B" if passed else "", 9)
+        pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
+        pdf.multi_cell(0, 6, pdf._f(status))
+        pdf.set_text_color(*_COL_BODY)
 
     return bytes(pdf.output())
