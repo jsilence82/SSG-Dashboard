@@ -362,9 +362,9 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     if show_txns:
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Matched transactions", len(show_txns))
-        m2.metric("PayPal Gross", f"€{sum(t['gross'] for t in show_txns):,.2f}")
-        m3.metric("PayPal Fees",  f"€{sum(t['fee']   for t in show_txns):,.2f}")
-        m4.metric("PayPal Net",   f"€{sum(t['net']   for t in show_txns):,.2f}")
+        m2.metric("Gross", f"€{sum(t['gross'] for t in show_txns):,.2f}")
+        m3.metric("Fees",  f"€{sum(t['fee']   for t in show_txns):,.2f}")
+        m4.metric("Net",   f"€{sum(t['net']   for t in show_txns):,.2f}")
 
     if not totals_df.empty:
         body  = totals_df.drop(index="TOTAL", errors="ignore")
