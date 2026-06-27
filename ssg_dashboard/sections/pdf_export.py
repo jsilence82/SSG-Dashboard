@@ -355,6 +355,7 @@ def build_reconciliation_pdf(
         pdf.ln(4)
 
     # Statistics table + chart
+    pdf.add_page()
     _section(pdf, "Statistics")
     cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
 
