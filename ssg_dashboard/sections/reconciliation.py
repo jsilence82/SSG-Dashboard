@@ -15,6 +15,7 @@ from ..persistence.paypal_cache import (
     load_paypal_cache,
 )
 from ..persistence.settings import load_paypal_settings
+from .pdf_export import build_reconciliation_pdf
 
 
 def _active(df: pd.DataFrame) -> pd.DataFrame:
@@ -372,8 +373,6 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
         if not total.empty:
             st.markdown("**Totals**")
             st.dataframe(total, use_container_width=True, hide_index=True)
-        csv_t = totals_df.reset_index(drop=True).to_csv(index=False).encode()
-        st.download_button("⬇️ Download Totals CSV", csv_t, f"{show}_totals.csv", "text/csv")
     else:
         st.info(
             "No performance date data found. "
@@ -402,20 +401,44 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
         if cat_cols:
             plot_df = stats_df.drop(index="TOTAL", errors="ignore").copy()
             fig = px.bar(plot_df, x="Performance Date", y=cat_cols, barmode="stack",
-                         title="Ticket categories per night")
+                         title="Ticket categories per night",
+                         labels={"value": "Tickets", "variable": "Category"})
             st.plotly_chart(fig, use_container_width=True)
-
-        csv_s = stats_df.reset_index(drop=True).to_csv(index=False).encode()
-        st.download_button("⬇️ Download Statistics CSV", csv_s, f"{show}_statistics.csv", "text/csv")
     else:
         st.info("No category or performance date data available for the Statistics table.")
+
+    tt_gross = _active(df[df["show"] == show])["revenue"].sum()
+    pp_gross = sum(t["gross"] for t in show_txns) if show_txns else None
+
+    # PDF download — covers Totals, Statistics, chart, and reconciliation summary
+    if not totals_df.empty or not stats_df.empty:
+        st.divider()
+        with st.spinner("Building PDF…"):
+            try:
+                pdf_bytes = build_reconciliation_pdf(
+                    show       = show,
+                    pp_start   = pp_start,
+                    pp_end     = pp_end,
+                    totals_df  = totals_df,
+                    stats_df   = stats_df,
+                    show_txns  = show_txns,
+                    tt_gross   = tt_gross,
+                    pp_gross   = pp_gross,
+                )
+                safe_show = show.replace(" ", "_").replace("/", "-")
+                st.download_button(
+                    "⬇️ Download PDF Report",
+                    data      = pdf_bytes,
+                    file_name = f"{safe_show}_reconciliation.pdf",
+                    mime      = "application/pdf",
+                )
+            except Exception as exc:
+                st.error(f"PDF generation failed: {exc}")
 
     if show_txns:
         st.divider()
         st.markdown("### ✅ PayPal Reconciliation Check")
-        tt_gross = _active(df[df["show"] == show])["revenue"].sum()
-        pp_gross = sum(t["gross"] for t in show_txns)
-        diff     = round(pp_gross - tt_gross, 2)
+        diff = round(pp_gross - tt_gross, 2)
 
         ca, cb, cc = st.columns(3)
         ca.metric("Ticket Tailor gross", f"€{tt_gross:,.2f}")
