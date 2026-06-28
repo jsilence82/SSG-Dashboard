@@ -23,8 +23,10 @@ def main() -> None:
         else:
             ok, _ = load_from_tt_cache()
             if not ok and load_api_key():
-                with st.spinner("Auto-fetching from Ticket Tailor…"):
-                    fetch_and_store(load_api_key())
+                _msg = st.empty()
+                _msg.info("Auto-fetching from Ticket Tailor…")
+                fetch_and_store(load_api_key())
+                _msg.empty()
 
     st.title("🎭 SSG Ticket Sales Dashboard")
 
