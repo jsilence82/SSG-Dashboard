@@ -4,10 +4,38 @@ import json
 from datetime import datetime, timezone
 
 import keyring
+import keyring.errors
 
 from ..config import SETTINGS_FILE
 
 _SERVICE = "ssg_dashboard"
+
+
+def _keyring_available() -> bool:
+    try:
+        keyring.get_password(_SERVICE, "_probe")
+        return True
+    except (keyring.errors.NoKeyringError, RuntimeError):
+        return False
+
+
+def _kr_get(key: str) -> str:
+    try:
+        return keyring.get_password(_SERVICE, key) or ""
+    except (keyring.errors.NoKeyringError, RuntimeError):
+        return ""
+
+
+def _kr_set(key: str, value: str) -> None:
+    """Raises KeyError if no keyring backend is available."""
+    try:
+        keyring.set_password(_SERVICE, key, value)
+    except (keyring.errors.NoKeyringError, RuntimeError) as exc:
+        raise KeyError(
+            "No secure credential store is available on this system. "
+            "On Windows, ensure pywin32-ctypes is installed: "
+            "pip install pywin32-ctypes"
+        ) from exc
 
 
 def load_settings() -> dict:
@@ -29,18 +57,21 @@ def _write_settings(payload: dict) -> None:
 
 
 def save_api_key(api_key: str) -> None:
-    keyring.set_password(_SERVICE, "tt_api_key", api_key.strip())
+    _kr_set("tt_api_key", api_key.strip())
 
 
 def load_api_key() -> str:
-    key = keyring.get_password(_SERVICE, "tt_api_key")
+    key = _kr_get("tt_api_key")
     if key:
         return key
     # One-time migration: move key from old JSON storage into keychain
     old = load_settings().get("api_key", "")
     if old:
-        keyring.set_password(_SERVICE, "tt_api_key", old)
-        _write_settings({})
+        try:
+            _kr_set("tt_api_key", old)
+            _write_settings({})
+        except KeyError:
+            pass
     return old
 
 
@@ -62,23 +93,29 @@ def load_capacities() -> dict:
 
 
 def save_paypal_settings(client_id: str, secret: str, sandbox: bool) -> None:
-    keyring.set_password(_SERVICE, "pp_client_id", client_id.strip())
-    keyring.set_password(_SERVICE, "pp_client_secret", secret.strip())
+    _kr_set("pp_client_id", client_id.strip())
+    _kr_set("pp_client_secret", secret.strip())
     _write_settings({"pp_sandbox": sandbox})
 
 
 def load_paypal_settings() -> tuple[str, str, bool]:
-    client_id = keyring.get_password(_SERVICE, "pp_client_id") or ""
-    secret    = keyring.get_password(_SERVICE, "pp_client_secret") or ""
+    client_id = _kr_get("pp_client_id")
+    secret    = _kr_get("pp_client_secret")
     # One-time migration from old JSON storage
     if not client_id or not secret:
         s = load_settings()
         if not client_id and s.get("pp_client_id"):
             client_id = s["pp_client_id"]
-            keyring.set_password(_SERVICE, "pp_client_id", client_id)
+            try:
+                _kr_set("pp_client_id", client_id)
+            except KeyError:
+                pass
         if not secret and s.get("pp_secret"):
             secret = s["pp_secret"]
-            keyring.set_password(_SERVICE, "pp_client_secret", secret)
+            try:
+                _kr_set("pp_client_secret", secret)
+            except KeyError:
+                pass
         if s.get("pp_client_id") or s.get("pp_secret"):
             _write_settings({})
     sandbox = load_settings().get("pp_sandbox", False)

@@ -24,7 +24,7 @@ Cross-references Ticket Tailor order data against PayPal transaction history. Ge
 
 ### Settings tab
 - Enter and test your Ticket Tailor API key
-- Enter PayPal Client ID and Client Secret (stored in the OS keychain — never written to disk)
+- Enter PayPal Client ID and Client Secret (stored in the OS credential store — never written to disk)
 - Configure column mappings if your data uses custom column names
 
 ---
@@ -163,4 +163,11 @@ All files in `data/` are created automatically on first run and are excluded fro
 | `data/tt_raw_cache.json` | Raw Ticket Tailor API snapshot (tickets, events, orders) |
 | `data/paypal_cache.json` | PayPal transactions with covered date-range metadata |
 
-API credentials (Ticket Tailor key, PayPal Client ID and Secret) are stored in the **OS keychain** via the `keyring` library and are never written to disk.
+API credentials (Ticket Tailor key, PayPal Client ID and Secret) are **never written to disk**. They are stored in the OS credential store via the `keyring` library:
+
+| Platform | Credential store |
+|---|---|
+| macOS | Keychain |
+| Windows | Credential Manager (`Control Panel → Credential Manager → Windows Credentials`) |
+
+On Windows, credential storage requires the `pywin32-ctypes` package, which is installed automatically when you run `pip install -r requirements.txt`. If a save fails, the app will show an error message in the Settings tab rather than silently discarding your credentials.

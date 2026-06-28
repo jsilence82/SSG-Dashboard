@@ -38,9 +38,12 @@ def render_settings() -> None:
     )
     if st.button("💾 Save key", disabled=(not new_key and not key), key="save_tt_key"):
         if new_key:
-            save_api_key(new_key)
-            st.success("API key saved.")
-            st.rerun()
+            try:
+                save_api_key(new_key)
+                st.success("API key saved.")
+                st.rerun()
+            except KeyError as e:
+                st.error(str(e))
         else:
             st.warning("Enter a new key to replace the existing one.")
 
@@ -98,8 +101,11 @@ def render_settings() -> None:
     ca, cb = st.columns(2)
     with ca:
         if st.button("💾 Save PayPal credentials", key="save_pp_settings"):
-            save_paypal_settings(pp_client, pp_secret, pp_sandbox)
-            st.success("PayPal credentials saved.")
+            try:
+                save_paypal_settings(pp_client, pp_secret, pp_sandbox)
+                st.success("PayPal credentials saved.")
+            except KeyError as e:
+                st.error(str(e))
     with cb:
         if st.button("🔌 Test & get token", key="test_pp_settings"):
             cid = pp_client.strip() or saved_cid

@@ -4,5 +4,6 @@ plotly
 requests
 openpyxl
 keyring
+pywin32-ctypes; sys_platform == "win32"
 fpdf2
 kaleido
