@@ -143,20 +143,18 @@ def _totals_table_data(totals_df: pd.DataFrame):
     for _, r in body.iterrows():
         rows.append([
             str(r["Performance Date"]),
-            str(int(r["Transactions"])),
-            f"€{r['Gross (€)']:,.2f}",
-            f"€{r['Fees (€)']:,.2f}",
-            f"€{r['Net (€)']:,.2f}",
+            f"{r['Gross (€)']:,.2f} €",
+            f"{r['Fees (€)']:,.2f} €",
+            f"{r['Net (€)']:,.2f} €",
         ])
     total_idx = None
     if "TOTAL" in totals_df.index:
         tr = totals_df.loc["TOTAL"]
         rows.append([
             str(tr["Performance Date"]),
-            str(int(tr["Transactions"])),
-            f"€{tr['Gross (€)']:,.2f}",
-            f"€{tr['Fees (€)']:,.2f}",
-            f"€{tr['Net (€)']:,.2f}",
+            f"{tr['Gross (€)']:,.2f} €",
+            f"{tr['Fees (€)']:,.2f} €",
+            f"{tr['Net (€)']:,.2f} €",
         ])
         total_idx = len(rows) - 1
     return rows, total_idx
@@ -249,6 +247,40 @@ def _trend_png(show_df: pd.DataFrame) -> bytes | None:
         return None
 
 
+def _daily_png(show_df: pd.DataFrame) -> bytes | None:
+    try:
+        import plotly.graph_objects as go
+        if "date" not in show_df.columns or not show_df["date"].notna().any():
+            return None
+        ts = (show_df.dropna(subset=["date"])
+              .assign(day=lambda d: d["date"].dt.normalize())
+              .groupby("day", as_index=False)
+              .agg(tickets=("quantity", "sum"))
+              .sort_values("day"))
+        if ts.empty:
+            return None
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=ts["day"].dt.strftime("%d %b %Y"),
+            y=ts["tickets"],
+            marker_color=_CHART_COLORS[1],
+            name="Tickets sold",
+        ))
+        fig.update_layout(
+            title="Daily ticket sales",
+            xaxis_title="Date",
+            yaxis_title="Tickets sold",
+            width=1400, height=400,
+            paper_bgcolor="white", plot_bgcolor="white",
+            margin=dict(l=60, r=40, t=55, b=80),
+            font=dict(family="Arial, Helvetica, sans-serif", size=12),
+            xaxis=dict(tickangle=-45),
+        )
+        return fig.to_image(format="png", scale=2, engine="kaleido")
+    except Exception:
+        return None
+
+
 def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
     try:
         import plotly.graph_objects as go
@@ -330,11 +362,16 @@ def build_reconciliation_pdf(
         gross = sum(t["gross"] for t in show_txns)
         fees  = sum(t["fee"]   for t in show_txns)
         net   = sum(t["net"]   for t in show_txns)
+        pdf.set_font(family, "B", 9)
+        pdf.set_text_color(*_COL_MUTED)
+        pdf.cell(0, 6, "Please enter the following values into your Abrechnung",
+                 new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_COL_BODY)
+        pdf.ln(1)
         _metric_strip(pdf, [
-            ("Transactions", str(len(show_txns))),
-            ("Gross",  f"€{gross:,.2f}"),
-            ("Fees",   f"€{fees:,.2f}"),
-            ("Net",    f"€{net:,.2f}"),
+            ("Gross",  f"{gross:,.2f} €"),
+            ("Fees",   f"{fees:,.2f} €"),
+            ("Net",    f"{net:,.2f} €"),
         ], _COL_ALT_BG)
 
     # Totals table
@@ -342,7 +379,7 @@ def build_reconciliation_pdf(
     if not totals_df.empty:
         rows, total_idx = _totals_table_data(totals_df)
         _draw_table(pdf,
-                    headers=["Performance Date", "Txns", "Gross (€)", "Fees (€)", "Net (€)"],
+                    headers=["Performance Date", "Gross (€)", "Fees (€)", "Net (€)"],
                     rows=rows,
                     col_widths=[97.0, 22.0, 50.0, 49.0, 49.0],
                     alignments=["L", "R", "R", "R", "R"],
@@ -430,14 +467,14 @@ def build_reconciliation_pdf(
         pdf.set_text_color(*_COL_BODY)
 
         _right_cell("Total Tickets Sold", str(total_tickets), _COL_ALT_BG)
-        _right_cell("Total Revenue",      f"€{total_revenue:,.2f}", _COL_WHITE)
+        _right_cell("Total Revenue",      f"{total_revenue:,.2f} €", _COL_WHITE)
 
         if capacity > 0:
             sell_through = total_tickets / capacity * 100
             rev_per_seat = total_revenue / capacity
-            _right_cell("Capacity",       str(capacity),            _COL_ALT_BG)
-            _right_cell("Sell-through",   f"{sell_through:.1f}%",   _COL_WHITE, bold=True)
-            _right_cell("Revenue / Seat", f"€{rev_per_seat:.2f}",   _COL_ALT_BG)
+            _right_cell("Capacity",       str(capacity),             _COL_ALT_BG)
+            _right_cell("Sell-through",   f"{sell_through:.1f}%",    _COL_WHITE, bold=True)
+            _right_cell("Revenue / Seat", f"{rev_per_seat:.2f} €",   _COL_ALT_BG)
 
             # Capacity fill bar spanning the right column
             bar_y = pdf.get_y() + 3
@@ -481,6 +518,13 @@ def build_reconciliation_pdf(
             pdf.set_text_color(*_COL_BODY)
             pdf.ln(4)
 
+        daily_png = _daily_png(show_df)
+        if daily_png:
+            if pdf.get_y() > pdf.h - 85:
+                pdf.add_page()
+            pdf.image(io.BytesIO(daily_png), x=_M, w=_CW)
+            pdf.ln(4)
+
         # Trend summary stats table (mirrors the analytics tab)
         if "date" in show_df.columns and show_df["date"].notna().any():
             ts = (show_df.dropna(subset=["date"])
@@ -513,12 +557,12 @@ def build_reconciliation_pdf(
         diff   = round(pp_gross - tt_gross, 2)
         passed = abs(diff) < 0.02
         _metric_strip(pdf, [
-            ("Ticket Tailor Gross", f"€{tt_gross:,.2f}"),
-            ("PayPal Gross",        f"€{pp_gross:,.2f}"),
-            ("Difference",          f"€{diff:,.2f}"),
+            ("Ticket Tailor Gross", f"{tt_gross:,.2f} €"),
+            ("PayPal Gross",        f"{pp_gross:,.2f} €"),
+            ("Difference",          f"{diff:,.2f} €"),
         ], _COL_PASS_BG if passed else _COL_FAIL_BG)
         status = ("Reconciliation passed — values match." if passed else
-                  f"Difference of €{diff:.2f}. Check for refunds or transactions outside the date window.")
+                  f"Difference of {diff:.2f} €. Check for refunds or transactions outside the date window.")
         pdf.set_font(family, "B" if passed else "", 9)
         pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
         pdf.multi_cell(0, 6, pdf._f(status))

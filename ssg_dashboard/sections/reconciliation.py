@@ -369,10 +369,10 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     if not totals_df.empty:
         body  = totals_df.drop(index="TOTAL", errors="ignore")
         total = totals_df.loc[["TOTAL"]] if "TOTAL" in totals_df.index else pd.DataFrame()
-        st.dataframe(body, use_container_width=True, hide_index=True)
+        st.dataframe(body, width="stretch", hide_index=True)
         if not total.empty:
             st.markdown("**Totals**")
-            st.dataframe(total, use_container_width=True, hide_index=True)
+            st.dataframe(total, width="stretch", hide_index=True)
     else:
         st.info(
             "No performance date data found. "
@@ -384,7 +384,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             .agg(Tickets=("quantity", "sum"), Revenue=("revenue", "sum"))
             .reset_index()
         )
-        st.dataframe(simple.style.format({"Revenue": "€{:.2f}"}), use_container_width=True)
+        st.dataframe(simple.style.format({"Revenue": "€{:.2f}"}), width="stretch")
 
     st.divider()
     st.markdown(f"### 🎟 Statistics — {show}")
@@ -392,10 +392,10 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     if not stats_df.empty:
         body_s  = stats_df.drop(index="TOTAL", errors="ignore")
         total_s = stats_df.loc[["TOTAL"]] if "TOTAL" in stats_df.index else pd.DataFrame()
-        st.dataframe(body_s, use_container_width=True, hide_index=True)
+        st.dataframe(body_s, width="stretch", hide_index=True)
         if not total_s.empty:
             st.markdown("**Totals**")
-            st.dataframe(total_s, use_container_width=True, hide_index=True)
+            st.dataframe(total_s, width="stretch", hide_index=True)
 
         cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
         if cat_cols:
@@ -403,7 +403,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             fig = px.bar(plot_df, x="Performance Date", y=cat_cols, barmode="stack",
                          title="Ticket categories per night",
                          labels={"value": "Tickets", "variable": "Category"})
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
     else:
         st.info("No category or performance date data available for the Statistics table.")
 
@@ -458,4 +458,4 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
 
         if not unmatched_df.empty:
             st.markdown("**PayPal transactions with no matching Ticket Tailor entry:**")
-            st.dataframe(unmatched_df, use_container_width=True, hide_index=True)
+            st.dataframe(unmatched_df, width="stretch", hide_index=True)
