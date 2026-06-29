@@ -8,6 +8,7 @@ from ..config import CANONICAL_FIELDS
 from ..mapping import mapping_ui
 from ..persistence.paypal_cache import cache_status_label, clear_paypal_cache
 from ..persistence.settings import (
+    _is_production,
     load_api_key,
     load_paypal_settings,
     load_settings,
@@ -31,21 +32,24 @@ def render_settings() -> None:
     else:
         st.warning("No API key configured.")
 
-    new_key = st.text_input(
-        "New API key" if not key else "Replace API key (leave blank to keep current)",
-        type="password",
-        key="tt_key_input_settings",
-    )
-    if st.button("💾 Save key", disabled=(not new_key and not key), key="save_tt_key"):
-        if new_key:
-            try:
-                save_api_key(new_key)
-                st.success("API key saved.")
-                st.rerun()
-            except KeyError as e:
-                st.error(str(e))
-        else:
-            st.warning("Enter a new key to replace the existing one.")
+    if not _is_production():
+        new_key = st.text_input(
+            "New API key" if not key else "Replace API key (leave blank to keep current)",
+            type="password",
+            key="tt_key_input_settings",
+        )
+        if st.button("💾 Save key", disabled=(not new_key and not key), key="save_tt_key"):
+            if new_key:
+                try:
+                    save_api_key(new_key)
+                    st.success("API key saved.")
+                    st.rerun()
+                except KeyError as e:
+                    st.error(str(e))
+            else:
+                st.warning("Enter a new key to replace the existing one.")
+    else:
+        st.info("Credentials are managed via Streamlit secrets. Use the Streamlit Cloud dashboard to update them.")
 
     tt_label = tt_cache_status_label()
     if tt_label:
@@ -88,33 +92,46 @@ def render_settings() -> None:
     )
 
     saved_cid, saved_secret, saved_sandbox = load_paypal_settings()
-    pp_client = st.text_area("Client ID", value=saved_cid, height=80, key="pp_client_settings")
 
-    show_secret = st.checkbox("Show Client Secret", value=False, key="pp_show_secret")
-    if show_secret:
-        pp_secret = st.text_area("Client Secret", value=saved_secret, height=80, key="pp_secret_settings")
+    if not _is_production():
+        pp_client = st.text_area("Client ID", value=saved_cid, height=80, key="pp_client_settings")
+
+        show_secret = st.checkbox("Show Client Secret", value=False, key="pp_show_secret")
+        if show_secret:
+            pp_secret = st.text_area("Client Secret", value=saved_secret, height=80, key="pp_secret_settings")
+        else:
+            pp_secret = st.text_input("Client Secret", value=saved_secret, type="password", key="pp_secret_settings")
+
+        pp_sandbox = st.checkbox("Use Sandbox", value=saved_sandbox, key="pp_sandbox_settings")
+
+        ca, cb = st.columns(2)
+        with ca:
+            if st.button("💾 Save PayPal credentials", key="save_pp_settings"):
+                try:
+                    save_paypal_settings(pp_client, pp_secret, pp_sandbox)
+                    st.success("PayPal credentials saved.")
+                except KeyError as e:
+                    st.error(str(e))
+        with cb:
+            if st.button("🔌 Test & get token", key="test_pp_settings"):
+                cid = pp_client.strip() or saved_cid
+                sec = pp_secret.strip() or saved_secret
+                ok, result = pp_get_token(cid, sec, pp_sandbox)
+                if ok:
+                    st.session_state["paypal_token"]   = result
+                    st.session_state["paypal_sandbox"] = pp_sandbox
+                    env = "Sandbox" if pp_sandbox else "Live"
+                    st.success(f"✓ Token obtained ({env}) — PayPal connected.")
+                else:
+                    st.error(f"✗ {result}")
     else:
-        pp_secret = st.text_input("Client Secret", value=saved_secret, type="password", key="pp_secret_settings")
-
-    pp_sandbox = st.checkbox("Use Sandbox", value=saved_sandbox, key="pp_sandbox_settings")
-
-    ca, cb = st.columns(2)
-    with ca:
-        if st.button("💾 Save PayPal credentials", key="save_pp_settings"):
-            try:
-                save_paypal_settings(pp_client, pp_secret, pp_sandbox)
-                st.success("PayPal credentials saved.")
-            except KeyError as e:
-                st.error(str(e))
-    with cb:
+        st.info("Credentials are managed via Streamlit secrets. Use the Streamlit Cloud dashboard to update them.")
         if st.button("🔌 Test & get token", key="test_pp_settings"):
-            cid = pp_client.strip() or saved_cid
-            sec = pp_secret.strip() or saved_secret
-            ok, result = pp_get_token(cid, sec, pp_sandbox)
+            ok, result = pp_get_token(saved_cid, saved_secret, saved_sandbox)
             if ok:
                 st.session_state["paypal_token"]   = result
-                st.session_state["paypal_sandbox"] = pp_sandbox
-                env = "Sandbox" if pp_sandbox else "Live"
+                st.session_state["paypal_sandbox"] = saved_sandbox
+                env = "Sandbox" if saved_sandbox else "Live"
                 st.success(f"✓ Token obtained ({env}) — PayPal connected.")
             else:
                 st.error(f"✗ {result}")
