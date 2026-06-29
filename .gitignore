@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 venv/
 *.app/
+DEPLOYMENT.md
+.streamlit/secrets.toml
+generate_auth.py

@@ -1,6 +1,9 @@
 # SSG Ticket Sales Dashboard
 
-A local Streamlit dashboard for analysing theatre ticket sales from [Ticket Tailor](https://www.tickettailor.com), with optional PayPal reconciliation.
+A Streamlit dashboard for analysing theatre ticket sales from [Ticket Tailor](https://www.tickettailor.com), with optional PayPal reconciliation.
+
+> **Deployed for internal testing and development on Streamlit Community Cloud.**
+> Access requires a username and password — contact Jeff to request access.
 
 ---
 
@@ -23,13 +26,27 @@ A local Streamlit dashboard for analysing theatre ticket sales from [Ticket Tail
 Cross-references Ticket Tailor order data against PayPal transaction history. Generates a Totals sheet (gross / fees / net per performance night) and a Statistics sheet (ticket categories per night). Detects transferred tickets (voided in TT but PayPal charge still valid) and flags unmatched PayPal transactions.
 
 ### Settings tab
-- Enter and test your Ticket Tailor API key
-- Enter PayPal Client ID and Client Secret (stored in the OS credential store — never written to disk)
+- Test your Ticket Tailor API connection and refresh data
+- Configure PayPal connection and run reconciliation
 - Configure column mappings if your data uses custom column names
 
 ---
 
-## Installation
+## Accessing the deployed app
+
+The app is hosted on **Streamlit Community Cloud** for internal use.
+
+- Log in with your username and password
+- After loading, click **Refresh from API** in the sidebar if no data is shown (the cloud instance does not retain cached data between restarts)
+- The app may take 30–60 seconds to wake up after a period of inactivity — this is normal on the free tier
+
+> **Credentials are managed centrally.** API keys and PayPal secrets are configured server-side and are not editable through the app UI when running on the cloud.
+
+---
+
+## Running locally
+
+If you need to run the app on your own machine (e.g. for development or offline use):
 
 ### Prerequisites
 
@@ -37,9 +54,7 @@ Cross-references Ticket Tailor order data against PayPal transaction history. Ge
 - A [Ticket Tailor](https://www.tickettailor.com) account with API access enabled
 - *(Optional)* A PayPal REST API app with the **Transaction Search** feature enabled
 
-### macOS
-
-Open Terminal, navigate to the project folder, then run:
+### macOS setup
 
 ```bash
 # 1. Create a virtual environment
@@ -50,11 +65,13 @@ python3 -m venv .venv
 
 # 3. Sign the .app bundle so macOS will allow it to launch
 ./sign_app.sh
+
+# 4. Copy the secrets template and fill in your credentials
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
+# Edit .streamlit/secrets.toml with your actual API keys
 ```
 
-### Windows
-
-Open Command Prompt or PowerShell, navigate to the project folder, then run:
+### Windows setup
 
 ```bat
 REM 1. Create a virtual environment
@@ -62,54 +79,50 @@ python -m venv .venv
 
 REM 2. Install dependencies
 .venv\Scripts\pip install -r requirements.txt
+
+REM 3. Copy the secrets template and fill in your credentials
+copy .streamlit\secrets.toml.example .streamlit\secrets.toml
+REM Edit .streamlit\secrets.toml with your actual API keys
 ```
 
-The `data/` directory is created automatically on first run.
+### Opening the app locally
+
+| Method | How |
+|---|---|
+| macOS double-click | Double-click **SSG Ticket Dashboard.app** in Finder |
+| macOS terminal | `./run.sh` |
+| Windows double-click | Double-click **run.bat** in File Explorer |
+| Windows terminal | `run.bat` |
+
+Press `Ctrl+C` in the terminal window to stop the server.
+
+**First time on macOS:** the system may show a security warning on first launch. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+### Local configuration
+
+When running locally, credentials are entered via the **⚙️ Settings** tab and stored securely in the OS credential store (macOS Keychain / Windows Credential Manager). They are never written to disk as plain text.
 
 ---
 
-## Opening the dashboard
+## Deployment (for administrators)
 
-### macOS — Double-click (recommended)
+### Adding or changing user passwords
 
-Double-click **SSG Ticket Dashboard.app** in Finder. The first time you open it, macOS may show a security warning. If it does:
+1. Run the password hash generator:
+   ```bash
+   .venv/bin/python3 generate_auth.py
+   ```
+2. Copy the printed hash into `auth.yaml` under the relevant username
+3. Commit and push — the cloud app redeploys automatically
 
-1. Open **System Settings → Privacy & Security**
-2. Scroll down to the security warning and click **Open Anyway**
+### Updating API credentials on the cloud
 
-The app opens your browser automatically each time.
+Go to the Streamlit Cloud dashboard → **App settings → Secrets** and update the relevant value. The app restarts automatically after saving.
 
-> If you edit the `.app` launcher script after installation, re-run `./sign_app.sh` to re-sign it before launching.
+### Known cloud limitations
 
-### macOS — Terminal
-
-```bash
-./run.sh
-```
-
-### Windows — Double-click
-
-Double-click **run.bat** in File Explorer. A Command Prompt window will open running the server, and your browser will open automatically.
-
-### Windows — Command Prompt
-
-```bat
-run.bat
-```
-
-Press `Ctrl+C` in the terminal/Command Prompt window to stop the server.
-
----
-
-## First-time configuration
-
-1. Open the **⚙️ Settings** tab
-2. Enter your Ticket Tailor API key and click **Save key**
-3. Click **Refresh from API** to fetch your ticket data
-4. *(Optional)* Enter your PayPal Client ID and Client Secret and click **Save PayPal credentials**, then **Test & get token** to connect
-5. Set up column mappings if prompted (required fields: Show and Category)
-
-On subsequent runs the dashboard loads from the local cache automatically — no API call needed unless you click Refresh.
+- **Data does not persist across restarts.** The `data/` cache is wiped on each restart or sleep/wake cycle. Users need to click **Refresh from API** after a cold start.
+- **The app sleeps after ~7 days of inactivity** on the free tier. The first load after sleep takes 30–60 seconds.
 
 ---
 
@@ -117,12 +130,15 @@ On subsequent runs the dashboard loads from the local cache automatically — no
 
 ```
 SSG Ticket Dashboard/
-├── app.py                        # Streamlit entry point
+├── app.py                        # Streamlit entry point (includes auth gate)
+├── auth.yaml                     # User credentials (bcrypt hashes — safe to commit)
 ├── run.sh                        # macOS/Linux terminal launcher
 ├── run.bat                       # Windows launcher
 ├── sign_app.sh                   # Re-signs the .app bundle after edits (macOS only)
 ├── requirements.txt
 ├── SSG Ticket Dashboard.app/     # macOS double-click launcher
+├── .streamlit/
+│   └── secrets.toml              # Local dev secrets (gitignored — never commit)
 └── ssg_dashboard/
     ├── main.py                   # Startup logic and page orchestration
     ├── sidebar.py                # Cache status and load/refresh controls
@@ -133,7 +149,7 @@ SSG Ticket Dashboard/
     │   └── paypal.py             # PayPal OAuth2 token + Transaction Search client
     ├── persistence/
     │   ├── canonical.py          # Read/write the processed canonical cache
-    │   ├── settings.py           # Non-secret settings JSON + keychain credential helpers
+    │   ├── settings.py           # Credential abstraction (secrets → env → keyring)
     │   ├── tt_cache.py           # Raw Ticket Tailor API snapshot cache
     │   └── paypal_cache.py       # Smart date-range-aware PayPal transaction cache
     └── sections/
@@ -152,22 +168,20 @@ SSG Ticket Dashboard/
         └── settings.py           # Settings tab UI
 ```
 
-### Runtime data (gitignored)
+### Credential storage
 
-All files in `data/` are created automatically on first run and are excluded from version control.
+| Context | Where credentials live |
+|---|---|
+| Streamlit Community Cloud | Streamlit secrets panel (encrypted, server-side) |
+| Local — macOS | macOS Keychain via `keyring` |
+| Local — Windows | Windows Credential Manager via `keyring` + `pywin32-ctypes` |
+| Local — alternative | `.streamlit/secrets.toml` (gitignored) |
+
+### Runtime data (gitignored)
 
 | File | Contents |
 |---|---|
-| `data/ssg_settings.json` | Column mapping, capacity overrides, sandbox flag — no secrets |
-| `data/ssg_cache.json` | Processed canonical ticket data (rebuilt from TT cache on startup) |
-| `data/tt_raw_cache.json` | Raw Ticket Tailor API snapshot (tickets, events, orders) |
-| `data/paypal_cache.json` | PayPal transactions with covered date-range metadata |
-
-API credentials (Ticket Tailor key, PayPal Client ID and Secret) are **never written to disk**. They are stored in the OS credential store via the `keyring` library:
-
-| Platform | Credential store |
-|---|---|
-| macOS | Keychain |
-| Windows | Credential Manager (`Control Panel → Credential Manager → Windows Credentials`) |
-
-On Windows, credential storage requires the `pywin32-ctypes` package, which is installed automatically when you run `pip install -r requirements.txt`. If a save fails, the app will show an error message in the Settings tab rather than silently discarding your credentials.
+| `data/ssg_settings.json` | Column mapping, capacity overrides, sandbox flag |
+| `data/ssg_cache.json` | Processed canonical ticket data |
+| `data/tt_raw_cache.json` | Raw Ticket Tailor API snapshot |
+| `data/paypal_cache.json` | PayPal transactions with date-range metadata |
