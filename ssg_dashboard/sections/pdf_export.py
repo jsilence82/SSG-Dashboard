@@ -121,7 +121,7 @@ def _draw_table(
     pdf.set_text_color(*_COL_HEADER_FG)
     pdf.set_draw_color(*_COL_BORDER)
     for h, w, a in zip(headers, col_widths, alignments):
-        pdf.cell(w, _HEAD_H, h, border=1, fill=True, align=a)
+        pdf.cell(w, _HEAD_H, pdf._f(h), border=1, fill=True, align=a)
     pdf.ln()
 
     pdf.set_text_color(*_COL_BODY)
