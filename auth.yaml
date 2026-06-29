@@ -2,12 +2,7 @@ credentials:
   usernames:
     jeff:
       name: Jeff Silence
-      # Run generate_auth.py to replace this placeholder with a real bcrypt hash
       password: "$2b$12$1F7y6WlUdvlJL.e16pYtbOGRR9KE2kqZusHv94Q96tHUDE3Lk7b82"
-    kirsten:
-      name: Kirsten Hertel
-      # Run generate_auth.py to replace this placeholder with a real bcrypt hash
-      password: "$2b$12$cqvkpfrigO5qRqmQyfr3UOwkgCoxQWg/5xSZQjaAgP.PxdlPkzJFm"
 cookie:
   name: ssg_auth
   key: "9092c81265cbe2bffc6d7a52d4a784e2"
