@@ -9,7 +9,15 @@ from .mapping import build_canonical
 from .persistence.canonical import cache_age_label, load_cache, save_cache
 from .persistence.settings import load_api_key, load_capacities, load_settings
 from .sections.dashboard import render_dashboard
+from .sections.settings import render_settings
 from .sidebar import sidebar_api_panel
+
+
+def _settings_only_tabs() -> None:
+    """Render the three-tab shell with only Settings active."""
+    tabs = st.tabs(["📊 Analytics", "🧾 Reconciliation Report", "⚙️ Settings"])
+    with tabs[2]:
+        render_settings()
 
 
 def main() -> None:
@@ -36,7 +44,8 @@ def main() -> None:
     raw_df       = st.session_state.get("raw_df")
 
     if canonical_df is None and raw_df is None:
-        st.info("No data loaded — use Load cache or Refresh in the sidebar, or configure your API key in ⚙️ Settings.")
+        st.info("No data loaded — click **🔄 Refresh** in the sidebar to fetch from Ticket Tailor.")
+        _settings_only_tabs()
         return
 
     if raw_df is not None:
@@ -54,7 +63,8 @@ def main() -> None:
 
     if raw_df is not None:
         if not mapping.get("show") or not mapping.get("category"):
-            st.warning("Column mapping not configured — go to ⚙️ Settings to set it up.")
+            st.warning("Column mapping not configured — open the **⚙️ Settings** tab below to set it up.")
+            _settings_only_tabs()
             return
         canonical = build_canonical(raw_df, mapping, prices_in_cents, revenue_is_per_unit)
         # Auto-save so next startup skips the build step entirely

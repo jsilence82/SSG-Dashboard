@@ -1,4 +1,5 @@
-data/
+data/*
+!data/ssg_settings.json
 logs/
 __pycache__/
 *.pyc
