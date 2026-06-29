@@ -175,9 +175,18 @@ def _stats_table_data(stats_df: pd.DataFrame, cat_cols: list[str]):
     return rows, total_idx
 
 
+def _mpl_to_png(fig) -> bytes:
+    import matplotlib.pyplot as plt
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf.read()
+
+
 def _pie_png(show_df: pd.DataFrame) -> bytes | None:
     try:
-        import plotly.graph_objects as go
+        import matplotlib.pyplot as plt
         if "category" not in show_df.columns:
             return None
         by_cat = (show_df.groupby("category", as_index=False)
@@ -187,29 +196,27 @@ def _pie_png(show_df: pd.DataFrame) -> bytes | None:
             return None
         n      = len(by_cat)
         colors = (_CHART_COLORS * ((n + len(_CHART_COLORS) - 1) // len(_CHART_COLORS)))[:n]
-        fig    = go.Figure(data=[go.Pie(
+        fig, ax = plt.subplots(figsize=(7, 4.8), facecolor="white")
+        _, _, autotexts = ax.pie(
+            by_cat["tickets"],
             labels=by_cat["category"],
-            values=by_cat["tickets"],
-            marker=dict(colors=colors),
-            hole=0.25,
-            textinfo="label+percent+value",
-            textfont=dict(size=12),
-        )])
-        fig.update_layout(
-            width=700, height=480,
-            paper_bgcolor="white",
-            margin=dict(l=20, r=20, t=20, b=20),
-            font=dict(family="Arial, Helvetica, sans-serif", size=12),
-            legend=dict(orientation="v", x=1.0, y=0.5),
+            colors=colors,
+            autopct="%1.1f%%",
+            startangle=90,
+            wedgeprops=dict(width=0.75),
         )
-        return fig.to_image(format="png", scale=2, engine="kaleido")
+        for t in autotexts:
+            t.set_fontsize(9)
+        ax.set_title("Ticket Category Breakdown", fontsize=11)
+        fig.tight_layout()
+        return _mpl_to_png(fig)
     except Exception:
         return None
 
 
 def _trend_png(show_df: pd.DataFrame) -> bytes | None:
     try:
-        import plotly.graph_objects as go
+        import matplotlib.pyplot as plt
         if "date" not in show_df.columns or not show_df["date"].notna().any():
             return None
         ts = (show_df.dropna(subset=["date"])
@@ -221,35 +228,23 @@ def _trend_png(show_df: pd.DataFrame) -> bytes | None:
             return None
         ts["day_number"] = (ts["day"] - ts["day"].min()).dt.days
         ts["cumulative"] = ts["tickets"].cumsum()
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=ts["day_number"],
-            y=ts["cumulative"],
-            mode="lines+markers",
-            name="Cumulative tickets",
-            line=dict(color=_CHART_COLORS[0], width=2),
-            marker=dict(size=6, color=_CHART_COLORS[0]),
-            fill="tozeroy",
-            fillcolor="rgba(68,114,196,0.15)",
-        ))
-        fig.update_layout(
-            title="Cumulative ticket sales",
-            xaxis_title="Days since first sale",
-            yaxis_title="Total tickets sold",
-            xaxis=dict(dtick=1, tickmode="linear"),
-            width=1400, height=420,
-            paper_bgcolor="white", plot_bgcolor="white",
-            margin=dict(l=60, r=40, t=55, b=60),
-            font=dict(family="Arial, Helvetica, sans-serif", size=12),
-        )
-        return fig.to_image(format="png", scale=2, engine="kaleido")
+        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="white")
+        color = "#4472C4"
+        ax.fill_between(ts["day_number"], ts["cumulative"], alpha=0.15, color=color)
+        ax.plot(ts["day_number"], ts["cumulative"], color=color, linewidth=2, marker="o", markersize=4)
+        ax.set_title("Cumulative ticket sales", fontsize=11)
+        ax.set_xlabel("Days since first sale")
+        ax.set_ylabel("Total tickets sold")
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+        fig.tight_layout()
+        return _mpl_to_png(fig)
     except Exception:
         return None
 
 
 def _daily_png(show_df: pd.DataFrame) -> bytes | None:
     try:
-        import plotly.graph_objects as go
+        import matplotlib.pyplot as plt
         if "date" not in show_df.columns or not show_df["date"].notna().any():
             return None
         ts = (show_df.dropna(subset=["date"])
@@ -259,52 +254,44 @@ def _daily_png(show_df: pd.DataFrame) -> bytes | None:
               .sort_values("day"))
         if ts.empty:
             return None
-        fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=ts["day"].dt.strftime("%d %b %Y"),
-            y=ts["tickets"],
-            marker_color=_CHART_COLORS[1],
-            name="Tickets sold",
-        ))
-        fig.update_layout(
-            title="Daily ticket sales",
-            xaxis_title="Date",
-            yaxis_title="Tickets sold",
-            width=1400, height=400,
-            paper_bgcolor="white", plot_bgcolor="white",
-            margin=dict(l=60, r=40, t=55, b=80),
-            font=dict(family="Arial, Helvetica, sans-serif", size=12),
-            xaxis=dict(tickangle=-45),
-        )
-        return fig.to_image(format="png", scale=2, engine="kaleido")
+        labels = ts["day"].dt.strftime("%d %b %Y").tolist()
+        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="white")
+        ax.bar(range(len(labels)), ts["tickets"], color="#ED7D31")
+        ax.set_xticks(range(len(labels)))
+        ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
+        ax.set_title("Daily ticket sales", fontsize=11)
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Tickets sold")
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+        fig.tight_layout()
+        return _mpl_to_png(fig)
     except Exception:
         return None
 
 
 def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
     try:
-        import plotly.graph_objects as go
+        import matplotlib.pyplot as plt
+        import numpy as np
         plot_df = stats_df.drop(index="TOTAL", errors="ignore").copy()
-        fig = go.Figure()
+        x_labels = plot_df["Performance Date"].astype(str).tolist()
+        x = np.arange(len(x_labels))
+        fig, ax = plt.subplots(figsize=(10, 3.5), facecolor="white")
+        bottom = np.zeros(len(x_labels))
         for i, cat in enumerate(cat_cols):
-            fig.add_trace(go.Bar(
-                name=cat,
-                x=plot_df["Performance Date"].astype(str),
-                y=plot_df[cat],
-                marker_color=_CHART_COLORS[i % len(_CHART_COLORS)],
-            ))
-        fig.update_layout(
-            barmode="stack",
-            title="Ticket categories per night",
-            xaxis_title="Performance Date",
-            yaxis_title="Tickets",
-            legend_title="Category",
-            width=1400, height=420,
-            paper_bgcolor="white", plot_bgcolor="white",
-            margin=dict(l=50, r=160, t=55, b=80),
-            font=dict(family="Arial, Helvetica, sans-serif", size=12),
-        )
-        return fig.to_image(format="png", scale=2, engine="kaleido")
+            vals = plot_df[cat].to_numpy(dtype=float)
+            ax.bar(x, vals, bottom=bottom, label=cat,
+                   color=_CHART_COLORS[i % len(_CHART_COLORS)])
+            bottom += vals
+        ax.set_xticks(x)
+        ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
+        ax.set_title("Ticket categories per night", fontsize=11)
+        ax.set_xlabel("Performance Date")
+        ax.set_ylabel("Tickets")
+        ax.legend(title="Category", bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+        ax.grid(axis="y", linestyle="--", alpha=0.4)
+        fig.tight_layout()
+        return _mpl_to_png(fig)
     except Exception:
         return None
 
