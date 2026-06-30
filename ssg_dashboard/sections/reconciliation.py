@@ -108,7 +108,7 @@ def build_reconciliation(
     unmatched_df  — PayPal transactions with no matching TT entry (flag for review)
     """
     show_df = df[df["show"] == show_filter].copy() if show_filter else df.copy()
-    work = _active(_paypal_only(show_df))
+    work = _active(show_df)
 
     show_txns   = _filter_paypal_for_show(show_df, paypal_txns)
     txn_by_ppid = {t["txn_id"]: t for t in show_txns}
@@ -162,7 +162,7 @@ def build_reconciliation(
                 net       = sum(t["net"]   for t in matched)
                 txn_count = len(matched)
             else:
-                gross     = grp["revenue"].sum()
+                gross     = grp["_order_total_paid"].sum() if "_order_total_paid" in grp.columns else grp["revenue"].sum()
                 fees      = 0.0
                 net       = gross
                 txn_count = int(grp["quantity"].sum())
@@ -249,7 +249,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     st.divider()
     show = st.selectbox("Production to report", shows, key="recon_show")
 
-    work     = _active(_paypal_only(df))
+    work     = _active(df)
     show_df  = work[work["show"] == show]
     today    = datetime.today()
     d_start  = today - timedelta(days=90)
@@ -403,10 +403,12 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             "No performance date data found. "
             "Ensure the **performance_date** column is mapped and tickets have dates."
         )
+        _show_active = _active(df[df["show"] == show])
+        _rev_col = "_order_total_paid" if "_order_total_paid" in _show_active.columns else "revenue"
         simple = (
-            _active(_paypal_only(df[df["show"] == show]))
+            _show_active
             .groupby("show")
-            .agg(Tickets=("quantity", "sum"), Revenue=("revenue", "sum"))
+            .agg(Tickets=("quantity", "sum"), Revenue=(_rev_col, "sum"))
             .reset_index()
         )
         st.dataframe(simple.style.format({"Revenue": "€{:.2f}"}), width="stretch")
@@ -432,7 +434,8 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     else:
         st.info("No category or performance date data available for the Statistics table.")
 
-    tt_gross = _active(_paypal_only(df[df["show"] == show]))["revenue"].sum()
+    _tt_active = _active(df[df["show"] == show])
+    tt_gross = _tt_active["_order_total_paid"].sum() if "_order_total_paid" in _tt_active.columns else _tt_active["revenue"].sum()
     pp_gross = sum(t["gross"] for t in show_txns) if show_txns else None
 
     if not totals_df.empty or not stats_df.empty:
@@ -479,6 +482,18 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                 f"⚠️ Difference of €{diff:.2f}. "
                 "Check for refunds, fees, or transactions outside the date window."
             )
+            excluded = (
+                _active(df[df["show"] == show])
+                .loc[lambda d: d["_order_payment_type"].fillna("").str.lower() != "paypal"]
+                .groupby("_order_payment_type")
+                .agg(Tickets=("quantity", "sum"), Revenue=("revenue", "sum"))
+                .reset_index()
+                .rename(columns={"_order_payment_type": "Payment type"})
+            )
+            if not excluded.empty:
+                st.caption("Revenue excluded from Ticket Tailor gross (non-PayPal payment types):")
+                st.dataframe(excluded.style.format({"Revenue": "€{:.2f}"}),
+                             width="stretch", hide_index=True)
 
         if not unmatched_df.empty:
             st.markdown("**PayPal transactions with no matching Ticket Tailor entry:**")

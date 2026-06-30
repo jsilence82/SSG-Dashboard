@@ -103,4 +103,9 @@ def build_canonical(df: pd.DataFrame, mapping: dict,
                                   if "_order_payment_type"  in df.columns else ""
     out["_order_refund_amount"] = pd.to_numeric(df["_order_refund_amount"], errors="coerce").fillna(0) \
                                   if "_order_refund_amount" in df.columns else 0
+    if "_order_total_paid" in df.columns:
+        paid = pd.to_numeric(df["_order_total_paid"], errors="coerce").fillna(0)
+        out["_order_total_paid"] = paid / 100.0 if prices_in_cents else paid
+    else:
+        out["_order_total_paid"] = 0.0
     return out
