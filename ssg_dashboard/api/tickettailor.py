@@ -90,16 +90,18 @@ def _process_tt_raw(
     )
 
     if orders_raw:
-        order_txn_map     = {}
-        order_pm_type_map = {}
-        order_refund_map  = {}
+        order_txn_map        = {}
+        order_pm_type_map    = {}
+        order_refund_map     = {}
+        order_total_paid_map = {}
         for o in orders_raw:
             oid = o.get("id")
             if not oid:
                 continue
-            order_txn_map[oid]     = o.get("txn_id") or ""
-            order_pm_type_map[oid] = (o.get("payment_method") or {}).get("type", "")
-            order_refund_map[oid]  = o.get("refund_amount") or 0
+            order_txn_map[oid]        = o.get("txn_id") or ""
+            order_pm_type_map[oid]    = (o.get("payment_method") or {}).get("type", "")
+            order_refund_map[oid]     = o.get("refund_amount") or 0
+            order_total_paid_map[oid] = o.get("total_paid") or 0
 
         order_id_col = next(
             (c for c in tickets_df.columns if c.lower() == "order_id"), None
@@ -108,6 +110,14 @@ def _process_tt_raw(
             tickets_df["_paypal_txn_id"]       = tickets_df[order_id_col].map(order_txn_map).fillna("")
             tickets_df["_order_payment_type"]  = tickets_df[order_id_col].map(order_pm_type_map).fillna("")
             tickets_df["_order_refund_amount"] = tickets_df[order_id_col].map(order_refund_map).fillna(0)
+
+            # total_paid is order-level (e.g. 0 when an order's tickets were transferred
+            # elsewhere despite a non-zero listed price); split evenly across the order's
+            # tickets so per-ticket sums stay additive back to the order's real total_paid.
+            tickets_per_order = tickets_df[order_id_col].value_counts()
+            order_total_paid  = tickets_df[order_id_col].map(order_total_paid_map).fillna(0)
+            order_ticket_count = tickets_df[order_id_col].map(tickets_per_order).fillna(1)
+            tickets_df["_order_total_paid"] = order_total_paid / order_ticket_count
 
     if event_id_col and id_col and not events_df.empty:
         join_cols  = [id_col]
