@@ -13,18 +13,22 @@ def save_tt_raw_cache(
     events_raw: list[dict],
     orders_raw: list[dict],
     capacity_by_show: dict,
+    event_series_raw: list[dict] | None = None,
+    performance_dates_by_show: dict | None = None,
 ) -> None:
     payload = {
-        "saved_at":        datetime.now().isoformat(),
-        "tickets":         tickets_raw,
-        "events":          events_raw,
-        "orders":          orders_raw,
-        "capacity_by_show": capacity_by_show,
+        "saved_at":                  datetime.now().isoformat(),
+        "tickets":                   tickets_raw,
+        "events":                    events_raw,
+        "orders":                    orders_raw,
+        "capacity_by_show":          capacity_by_show,
+        "event_series":              event_series_raw or [],
+        "performance_dates_by_show": performance_dates_by_show or {},
     }
     TT_RAW_CACHE_FILE.write_text(json.dumps(payload, default=str), encoding="utf-8")
 
 
-def load_tt_raw_cache() -> tuple[list, list, list, dict, str] | None:
+def load_tt_raw_cache() -> tuple[list, list, list, dict, list, dict, str] | None:
     if not TT_RAW_CACHE_FILE.exists():
         return None
     try:
@@ -34,6 +38,8 @@ def load_tt_raw_cache() -> tuple[list, list, list, dict, str] | None:
             payload.get("events", []),
             payload.get("orders", []),
             payload.get("capacity_by_show", {}),
+            payload.get("event_series", []),
+            payload.get("performance_dates_by_show", {}),
             payload.get("saved_at", ""),
         )
     except Exception:
@@ -44,7 +50,7 @@ def tt_cache_status_label() -> str | None:
     result = load_tt_raw_cache()
     if result is None:
         return None
-    tickets, _, _, _, saved_at = result
+    tickets, _, _, _, _, _, saved_at = result
     try:
         dt    = datetime.fromisoformat(saved_at)
         delta = datetime.now() - dt

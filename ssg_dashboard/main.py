@@ -7,7 +7,12 @@ import streamlit as st
 from .api.tickettailor import fetch_and_store, load_from_tt_cache
 from .mapping import build_canonical
 from .persistence.canonical import cache_age_label, load_cache, save_cache
-from .persistence.settings import load_api_key, load_capacities, load_settings
+from .persistence.settings import (
+    load_api_key,
+    load_capacities,
+    load_performance_dates,
+    load_settings,
+)
 from .sections.dashboard import render_dashboard
 from .sections.settings import render_settings
 from .sidebar import sidebar_api_panel
@@ -23,11 +28,12 @@ def _settings_only_tabs() -> None:
 def main() -> None:
     if "initialized" not in st.session_state:
         st.session_state["initialized"] = True
-        df, saved_at, cap = load_cache()
+        df, saved_at, cap, perf_dates = load_cache()
         if df is not None:
-            st.session_state["canonical_df"] = df
-            st.session_state["cache_age"]    = saved_at
-            st.session_state["api_capacity"] = cap
+            st.session_state["canonical_df"]          = df
+            st.session_state["cache_age"]              = saved_at
+            st.session_state["api_capacity"]           = cap
+            st.session_state["api_performance_dates"]  = perf_dates
         else:
             ok, _ = load_from_tt_cache()
             if not ok and load_api_key():
@@ -68,7 +74,8 @@ def main() -> None:
             return
         canonical = build_canonical(raw_df, mapping, prices_in_cents, revenue_is_per_unit)
         # Auto-save so next startup skips the build step entirely
-        save_cache(canonical, st.session_state.get("api_capacity", {}))
+        save_cache(canonical, st.session_state.get("api_capacity", {}),
+                   st.session_state.get("api_performance_dates", {}))
         st.session_state["canonical_df"] = canonical
         st.session_state["cache_age"]    = datetime.now(timezone.utc).isoformat()
     else:
@@ -78,5 +85,9 @@ def main() -> None:
     user_cap = load_capacities()
     capacity_by_show = {**api_cap, **user_cap}
 
+    api_perf_dates  = st.session_state.get("api_performance_dates", {})
+    user_perf_dates = load_performance_dates()
+    performance_dates_by_show = {**api_perf_dates, **user_perf_dates}
+
     st.divider()
-    render_dashboard(canonical, capacity_by_show)
+    render_dashboard(canonical, capacity_by_show, performance_dates_by_show)

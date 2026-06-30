@@ -14,7 +14,7 @@ from ..persistence.paypal_cache import (
     get_paypal_transactions,
     load_paypal_cache,
 )
-from ..persistence.settings import load_capacities, load_paypal_settings
+from ..persistence.settings import load_capacities, load_paypal_settings, load_performance_dates
 from .pdf_export import build_reconciliation_pdf
 
 
@@ -24,6 +24,16 @@ def _active(df: pd.DataFrame) -> pd.DataFrame:
         return df
     exclude = {"void", "voided", "refund", "refunded", "cancelled", "canceled"}
     return df[~df["status"].fillna("").str.lower().isin(exclude)]
+
+
+def _parse_tt_date(value: str | None) -> datetime | None:
+    """Parse a stored Ticket Tailor sale-window date (ISO 8601 string) into a datetime."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 def _paypal_ids_for_show(show_df: pd.DataFrame) -> set[str]:
@@ -251,11 +261,21 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             d_start = dates.min().to_pydatetime() - timedelta(days=7)
             d_end   = dates.max().to_pydatetime() + timedelta(days=7)
 
+    # Prefer the Ticket Tailor sale window (tickets_available_at → tickets_unavailable_at)
+    # for this show when it's been fetched/saved — it's a precise bound, no padding needed.
+    saved_window = {**st.session_state.get("api_performance_dates", {}), **load_performance_dates()}.get(show, {})
+    sale_start   = _parse_tt_date(saved_window.get("tickets_available_at"))
+    sale_end     = _parse_tt_date(saved_window.get("tickets_unavailable_at"))
+    if sale_start:
+        d_start = sale_start
+    if sale_end:
+        d_end = sale_end
+
     cd1, cd2 = st.columns(2)
     with cd1:
-        pp_start = st.date_input("PayPal search from", value=d_start.date(), key="pp_start")
+        pp_start = st.date_input("PayPal search from", value=d_start.date(), key=f"pp_start_{show}")
     with cd2:
-        pp_end   = st.date_input("PayPal search to",   value=d_end.date(),   key="pp_end")
+        pp_end   = st.date_input("PayPal search to",   value=d_end.date(),   key=f"pp_end_{show}")
 
     cache_label = cache_status_label()
     if cache_label:

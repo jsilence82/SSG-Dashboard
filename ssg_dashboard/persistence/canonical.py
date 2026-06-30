@@ -8,28 +8,30 @@ import pandas as pd
 from ..config import CACHE_FILE
 
 
-def save_cache(canonical_df: pd.DataFrame, capacity_by_show: dict | None = None) -> None:
+def save_cache(canonical_df: pd.DataFrame, capacity_by_show: dict | None = None,
+               performance_dates_by_show: dict | None = None) -> None:
     df_copy = canonical_df.copy()
     for date_col in ("date", "performance_date"):
         if date_col in df_copy.columns:
             df_copy[date_col] = df_copy[date_col].astype(str)
     payload = {
-        "saved_at":         datetime.now(timezone.utc).isoformat(),
-        "is_canonical":     True,
-        "records":          df_copy.to_dict(orient="records"),
-        "capacity_by_show": capacity_by_show or {},
+        "saved_at":                  datetime.now(timezone.utc).isoformat(),
+        "is_canonical":              True,
+        "records":                   df_copy.to_dict(orient="records"),
+        "capacity_by_show":          capacity_by_show or {},
+        "performance_dates_by_show": performance_dates_by_show or {},
     }
     CACHE_FILE.write_text(json.dumps(payload, default=str), encoding="utf-8")
 
 
-def load_cache() -> tuple[pd.DataFrame | None, str | None, dict]:
+def load_cache() -> tuple[pd.DataFrame | None, str | None, dict, dict]:
     if not CACHE_FILE.exists():
-        return None, None, {}
+        return None, None, {}, {}
     try:
         payload = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
         df = pd.DataFrame(payload.get("records", []))
         if df.empty:
-            return None, None, {}
+            return None, None, {}, {}
         for date_col in ("date", "performance_date"):
             if date_col in df.columns:
                 df[date_col] = pd.to_datetime(df[date_col], errors="coerce", utc=True)
@@ -53,9 +55,10 @@ def load_cache() -> tuple[pd.DataFrame | None, str | None, dict]:
             df["_order_payment_type"] = ""
         if "_order_refund_amount" not in df.columns:
             df["_order_refund_amount"] = 0
-        return df, payload.get("saved_at"), payload.get("capacity_by_show", {})
+        return (df, payload.get("saved_at"), payload.get("capacity_by_show", {}),
+                payload.get("performance_dates_by_show", {}))
     except Exception:
-        return None, None, {}
+        return None, None, {}, {}
 
 
 def cache_age_label(saved_at: str | None) -> str:

@@ -37,40 +37,48 @@ def sample_df():
 class TestSaveLoadRoundtrip:
     def test_data_preserved(self, cache_file, sample_df):
         mod.save_cache(sample_df, {"Show A": 100})
-        df, saved_at, capacity = mod.load_cache()
+        df, saved_at, capacity, perf_dates = mod.load_cache()
         assert list(df["show"]) == ["Show A", "Show B"]
         assert list(df["category"]) == ["Adult", "Child"]
         assert capacity == {"Show A": 100}
         assert saved_at is not None
 
+    def test_performance_dates_preserved(self, cache_file, sample_df):
+        dates = {"Show A": {"tickets_available_at": "2024-01-01", "tickets_unavailable_at": "2024-02-01"}}
+        mod.save_cache(sample_df, {}, dates)
+        _, _, _, perf_dates = mod.load_cache()
+        assert perf_dates == dates
+
     def test_dates_restored_as_datetime(self, cache_file, sample_df):
         mod.save_cache(sample_df)
-        df, _, _ = mod.load_cache()
+        df, _, _, _ = mod.load_cache()
         assert pd.api.types.is_datetime64_any_dtype(df["date"])
         assert pd.api.types.is_datetime64_any_dtype(df["performance_date"])
 
     def test_numeric_columns_restored(self, cache_file, sample_df):
         mod.save_cache(sample_df)
-        df, _, _ = mod.load_cache()
+        df, _, _, _ = mod.load_cache()
         assert df["quantity"].dtype.kind in ("f", "i")
         assert df["revenue"].dtype.kind in ("f", "i")
 
     def test_capacity_defaults_to_empty_when_none(self, cache_file, sample_df):
         mod.save_cache(sample_df, None)
-        _, _, capacity = mod.load_cache()
+        _, _, capacity, perf_dates = mod.load_cache()
         assert capacity == {}
+        assert perf_dates == {}
 
 
 class TestLoadEdgeCases:
     def test_missing_file_returns_none(self, cache_file):
-        df, saved_at, capacity = mod.load_cache()
+        df, saved_at, capacity, perf_dates = mod.load_cache()
         assert df is None
         assert saved_at is None
         assert capacity == {}
+        assert perf_dates == {}
 
     def test_corrupted_json_returns_none(self, cache_file):
         cache_file.write_text("not valid json", encoding="utf-8")
-        df, saved_at, capacity = mod.load_cache()
+        df, saved_at, capacity, perf_dates = mod.load_cache()
         assert df is None
 
     def test_backfills_missing_columns_from_old_cache(self, cache_file):
@@ -82,7 +90,7 @@ class TestLoadEdgeCases:
             "capacity_by_show": {},
         }
         cache_file.write_text(json.dumps(old_payload), encoding="utf-8")
-        df, _, _ = mod.load_cache()
+        df, _, _, _ = mod.load_cache()
         assert "performance_date" in df.columns
         assert "email" in df.columns
         assert "occurrence" in df.columns

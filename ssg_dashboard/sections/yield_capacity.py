@@ -1,13 +1,25 @@
 """Yield & capacity tab."""
 
+from datetime import date, datetime
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from ..persistence.settings import save_capacities
+from ..persistence.settings import save_capacities, save_performance_dates
 
 
-def render_yield_capacity(filtered: pd.DataFrame, capacity_by_show: dict) -> None:
+def _parse_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).date()
+    except ValueError:
+        return None
+
+
+def render_yield_capacity(filtered: pd.DataFrame, capacity_by_show: dict,
+                           performance_dates_by_show: dict | None = None) -> None:
     shows = sorted(filtered["show"].unique())
 
     st.markdown("**Capacity per show** — enter total seats available. "
@@ -26,6 +38,35 @@ def render_yield_capacity(filtered: pd.DataFrame, capacity_by_show: dict) -> Non
     if st.button("💾 Save capacities"):
         save_capacities(updated)
         st.success("Capacities saved.")
+
+    st.divider()
+    st.markdown("**Ticket sale window per show** — from when tickets went on sale to "
+                "when the event ended. Pre-filled from Ticket Tailor's event series when available.")
+
+    performance_dates_by_show = performance_dates_by_show or {}
+    updated_dates = {}
+    for show in shows:
+        saved = performance_dates_by_show.get(show, {})
+        dc1, dc2 = st.columns(2)
+        with dc1:
+            start = st.date_input(
+                f"{show} — on sale from",
+                value=_parse_date(saved.get("tickets_available_at")),
+                key=f"perf_start_{show}")
+        with dc2:
+            end = st.date_input(
+                f"{show} — event ended",
+                value=_parse_date(saved.get("tickets_unavailable_at")),
+                key=f"perf_end_{show}")
+        if start or end:
+            updated_dates[show] = {
+                "tickets_available_at":   start.isoformat() if start else None,
+                "tickets_unavailable_at": end.isoformat() if end else None,
+            }
+
+    if st.button("💾 Save performance dates"):
+        save_performance_dates(updated_dates)
+        st.success("Performance dates saved.")
 
     valid = {s: c for s, c in updated.items() if c > 0}
     if not valid:

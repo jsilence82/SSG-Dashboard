@@ -1,6 +1,7 @@
 """Ticket Tailor API client."""
 
 import base64
+from datetime import datetime, timezone
 
 import pandas as pd
 import requests
@@ -128,28 +129,67 @@ def _process_tt_raw(
     return tickets_df, events_df, capacity_by_show
 
 
+def _tt_to_iso(value) -> str | None:
+    """Normalise a Ticket Tailor date field into an ISO 8601 string.
+
+    TT date fields are nested objects with 'iso', 'formatted', 'date', and
+    'unix' keys; 'iso' is preferred since it preserves the event's own
+    timezone instead of collapsing to UTC. Plain unix ints/strings (e.g. from
+    older cached payloads) are also handled.
+    """
+    if isinstance(value, dict):
+        for key in ("iso", "formatted", "date"):
+            if value.get(key):
+                return value[key]
+        value = value.get("unix")
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _process_event_series(event_series_raw: list[dict]) -> dict[str, dict]:
+    """Map each event series (show) name to its ticket sale window —
+    when tickets went on sale and when they came offline (event ended)."""
+    performance_dates: dict[str, dict] = {}
+    for series in event_series_raw:
+        name = series.get("name")
+        if not name:
+            continue
+        start = _tt_to_iso(series.get("tickets_available_at"))
+        end   = _tt_to_iso(series.get("tickets_unavailable_at"))
+        if start or end:
+            performance_dates[name] = {"tickets_available_at": start, "tickets_unavailable_at": end}
+    return performance_dates
+
+
 @st.cache_data(show_spinner=False, ttl=900)
-def _fetch_raw(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    events_raw  = tt_fetch_all(api_key, "events",         progress_label="Fetching events…")
-    tickets_raw = tt_fetch_all(api_key, "issued_tickets", progress_label="Fetching tickets…")
-    orders_raw  = tt_fetch_all(api_key, "orders",         progress_label="Fetching orders…")
+def _fetch_raw(api_key: str) -> tuple[pd.DataFrame, pd.DataFrame, dict, dict]:
+    events_raw       = tt_fetch_all(api_key, "events",         progress_label="Fetching events…")
+    tickets_raw      = tt_fetch_all(api_key, "issued_tickets", progress_label="Fetching tickets…")
+    orders_raw       = tt_fetch_all(api_key, "orders",         progress_label="Fetching orders…")
+    event_series_raw = tt_fetch_all(api_key, "event_series",   progress_label="Fetching event series…")
 
     tickets_df, events_df, capacity_by_show = _process_tt_raw(tickets_raw, events_raw, orders_raw)
+    performance_dates_by_show = _process_event_series(event_series_raw)
 
     # Persist raw data so the next session can skip this API call
-    save_tt_raw_cache(tickets_raw, events_raw, orders_raw, capacity_by_show)
+    save_tt_raw_cache(tickets_raw, events_raw, orders_raw, capacity_by_show,
+                       event_series_raw, performance_dates_by_show)
 
-    return tickets_df, events_df, capacity_by_show
+    return tickets_df, events_df, capacity_by_show, performance_dates_by_show
 
 
 def fetch_and_store(api_key: str) -> tuple[bool, str]:
     try:
-        tickets_df, events_df, capacity_by_show = _fetch_raw(api_key)
+        tickets_df, events_df, capacity_by_show, performance_dates_by_show = _fetch_raw(api_key)
         if tickets_df.empty:
             return False, "No issued tickets returned."
-        st.session_state["raw_df"]        = tickets_df
-        st.session_state["raw_source"]    = "api"
-        st.session_state["api_capacity"]  = capacity_by_show
+        st.session_state["raw_df"]                 = tickets_df
+        st.session_state["raw_source"]              = "api"
+        st.session_state["api_capacity"]            = capacity_by_show
+        st.session_state["api_performance_dates"]   = performance_dates_by_show
         return True, f"Fetched {len(tickets_df)} rows across {len(events_df)} events."
     except RuntimeError as exc:
         return False, str(exc)
@@ -164,14 +204,16 @@ def load_from_tt_cache() -> tuple[bool, str]:
     result = load_tt_raw_cache()
     if result is None:
         return False, "No TT raw cache found on disk."
-    tickets_raw, events_raw, orders_raw, capacity_by_show, saved_at = result
+    (tickets_raw, events_raw, orders_raw, capacity_by_show,
+     _event_series_raw, performance_dates_by_show, saved_at) = result
     try:
         tickets_df, _, _ = _process_tt_raw(tickets_raw, events_raw, orders_raw)
         if tickets_df.empty:
             return False, "TT cache exists but contains no ticket rows."
-        st.session_state["raw_df"]       = tickets_df
-        st.session_state["raw_source"]   = "api"
-        st.session_state["api_capacity"] = capacity_by_show
+        st.session_state["raw_df"]                 = tickets_df
+        st.session_state["raw_source"]              = "api"
+        st.session_state["api_capacity"]            = capacity_by_show
+        st.session_state["api_performance_dates"]   = performance_dates_by_show
         return True, f"Loaded {len(tickets_df)} rows from TT cache (saved {saved_at[:10]})."
     except Exception as exc:
         return False, f"Could not process TT cache: {exc}"
