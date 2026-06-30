@@ -12,3 +12,4 @@ venv/
 DEPLOYMENT.md
 .streamlit/secrets.toml
 generate_auth.py
+.coverage
