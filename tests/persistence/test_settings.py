@@ -21,6 +21,17 @@ def mock_keyring(monkeypatch):
     return kr
 
 
+@pytest.fixture(autouse=True)
+def force_dev_mode(monkeypatch):
+    """These tests assert on keyring fallback behavior, which only runs in dev
+    mode and only when st.secrets has no entry for the credential. Both
+    _is_production() and get_credential() read st.secrets directly, so a
+    developer's local .streamlit/secrets.toml leaks real credentials into
+    these tests unless st.secrets is neutralized too."""
+    monkeypatch.setattr(mod, "_is_production", lambda: False)
+    monkeypatch.setattr(mod.st, "secrets", {})
+
+
 class TestApiKey:
     def test_save_api_key_calls_keyring(self, settings_file, mock_keyring):
         mod.save_api_key("mykey123")
