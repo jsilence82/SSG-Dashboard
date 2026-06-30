@@ -26,6 +26,15 @@ def _active(df: pd.DataFrame) -> pd.DataFrame:
     return df[~df["status"].fillna("").str.lower().isin(exclude)]
 
 
+def _paypal_only(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only tickets whose Ticket Tailor order was paid via PayPal — this report
+    cross-references PayPal transaction history, so other payment methods (cash, card,
+    comp, etc.) have nothing to reconcile against and must be excluded."""
+    if "_order_payment_type" not in df.columns:
+        return df.iloc[0:0]
+    return df[df["_order_payment_type"].fillna("").str.lower() == "paypal"]
+
+
 def _parse_tt_date(value: str | None) -> datetime | None:
     """Parse a stored Ticket Tailor sale-window date (ISO 8601 string) into a datetime."""
     if not value:
@@ -48,7 +57,7 @@ def _paypal_ids_for_show(show_df: pd.DataFrame) -> set[str]:
     if "paypal_txn_id" not in show_df.columns:
         return set()
 
-    active  = _active(show_df)
+    active  = _active(_paypal_only(show_df))
     pp_ids  = set(active["paypal_txn_id"].dropna().astype(str).str.strip()) - {"", "nan"}
 
     if "status" in show_df.columns and "_order_payment_type" in show_df.columns:
@@ -99,7 +108,7 @@ def build_reconciliation(
     unmatched_df  — PayPal transactions with no matching TT entry (flag for review)
     """
     show_df = df[df["show"] == show_filter].copy() if show_filter else df.copy()
-    work = _active(show_df)
+    work = _active(_paypal_only(show_df))
 
     show_txns   = _filter_paypal_for_show(show_df, paypal_txns)
     txn_by_ppid = {t["txn_id"]: t for t in show_txns}
@@ -240,7 +249,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     st.divider()
     show = st.selectbox("Production to report", shows, key="recon_show")
 
-    work     = _active(df)
+    work     = _active(_paypal_only(df))
     show_df  = work[work["show"] == show]
     today    = datetime.today()
     d_start  = today - timedelta(days=90)
@@ -395,7 +404,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             "Ensure the **performance_date** column is mapped and tickets have dates."
         )
         simple = (
-            _active(df[df["show"] == show])
+            _active(_paypal_only(df[df["show"] == show]))
             .groupby("show")
             .agg(Tickets=("quantity", "sum"), Revenue=("revenue", "sum"))
             .reset_index()
@@ -423,7 +432,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     else:
         st.info("No category or performance date data available for the Statistics table.")
 
-    tt_gross = _active(df[df["show"] == show])["revenue"].sum()
+    tt_gross = _active(_paypal_only(df[df["show"] == show]))["revenue"].sum()
     pp_gross = sum(t["gross"] for t in show_txns) if show_txns else None
 
     if not totals_df.empty or not stats_df.empty:

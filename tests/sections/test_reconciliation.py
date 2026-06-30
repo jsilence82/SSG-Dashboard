@@ -8,6 +8,7 @@ from ssg_dashboard.sections.reconciliation import (
     _filter_paypal_for_show,
     _parse_tt_date,
     _paypal_ids_for_show,
+    _paypal_only,
     build_reconciliation,
 )
 
@@ -27,7 +28,7 @@ def _show_df(rows):
 
 
 def _sample_df():
-    """Two nights for one show, no PayPal linkage, all tickets active."""
+    """Two nights for one show, all tickets active and paid via PayPal (no txn linkage yet)."""
     return pd.DataFrame({
         "show":                 ["Carmilla", "Carmilla", "Carmilla"],
         "status":               ["complete", "complete", "complete"],
@@ -37,7 +38,7 @@ def _sample_df():
         "quantity":             [1, 1, 2],
         "category":             ["Adult", "Child", "Adult"],
         "paypal_txn_id":        ["", "", ""],
-        "_order_payment_type":  ["", "", ""],
+        "_order_payment_type":  ["paypal", "paypal", "paypal"],
         "_order_refund_amount": [0, 0, 0],
     })
 
@@ -62,6 +63,30 @@ class TestActive:
         assert len(_active(df)) == 2
 
 
+class TestPaypalOnly:
+    def test_keeps_paypal_rows_only(self):
+        df = _show_df([
+            {"_order_payment_type": "paypal"},
+            {"_order_payment_type": "stripe"},
+            {"_order_payment_type": "cash"},
+        ])
+        result = _paypal_only(df)
+        assert len(result) == 1
+        assert result.iloc[0]["_order_payment_type"] == "paypal"
+
+    def test_case_insensitive(self):
+        df = _show_df([{"_order_payment_type": "PayPal"}, {"_order_payment_type": "Stripe"}])
+        assert len(_paypal_only(df)) == 1
+
+    def test_missing_or_blank_payment_type_excluded(self):
+        df = _show_df([{"_order_payment_type": ""}, {"_order_payment_type": None}])
+        assert _paypal_only(df).empty
+
+    def test_missing_column_returns_empty(self):
+        df = pd.DataFrame({"show": ["A", "B"]})
+        assert _paypal_only(df).empty
+
+
 class TestParseTtDate:
     def test_none_returns_none(self):
         assert _parse_tt_date(None) is None
@@ -84,16 +109,25 @@ class TestPaypalIdsForShow:
 
     def test_active_tickets_included(self):
         df = _show_df([
-            {"status": "complete", "paypal_txn_id": "PP1"},
-            {"status": "complete", "paypal_txn_id": "PP2"},
+            {"status": "complete", "paypal_txn_id": "PP1", "_order_payment_type": "paypal",
+             "_order_refund_amount": 0},
+            {"status": "complete", "paypal_txn_id": "PP2", "_order_payment_type": "paypal",
+             "_order_refund_amount": 0},
         ])
         assert _paypal_ids_for_show(df) == {"PP1", "PP2"}
 
     def test_blank_and_nan_ids_excluded(self):
         df = _show_df([
-            {"status": "complete", "paypal_txn_id": ""},
-            {"status": "complete", "paypal_txn_id": None},
+            {"status": "complete", "paypal_txn_id": "", "_order_payment_type": "paypal",
+             "_order_refund_amount": 0},
+            {"status": "complete", "paypal_txn_id": None, "_order_payment_type": "paypal",
+             "_order_refund_amount": 0},
         ])
+        assert _paypal_ids_for_show(df) == set()
+
+    def test_active_ticket_paid_by_other_method_excluded(self):
+        df = _show_df([{"status": "complete", "paypal_txn_id": "PP1",
+                         "_order_payment_type": "stripe", "_order_refund_amount": 0}])
         assert _paypal_ids_for_show(df) == set()
 
     def test_voided_transferred_ticket_included(self):
@@ -123,13 +157,15 @@ class TestFilterPaypalForShow:
         assert _filter_paypal_for_show(df, txns) == txns
 
     def test_filters_to_matching_txn_id_only(self):
-        df = _show_df([{"status": "complete", "paypal_txn_id": "PP1"}])
+        df = _show_df([{"status": "complete", "paypal_txn_id": "PP1",
+                         "_order_payment_type": "paypal", "_order_refund_amount": 0}])
         txns = [_txn("PP1", 10, -1), _txn("PP2", 20, -2)]
         result = _filter_paypal_for_show(df, txns)
         assert [t["txn_id"] for t in result] == ["PP1"]
 
     def test_includes_refund_via_reference_id(self):
-        df = _show_df([{"status": "complete", "paypal_txn_id": "PP1"}])
+        df = _show_df([{"status": "complete", "paypal_txn_id": "PP1",
+                         "_order_payment_type": "paypal", "_order_refund_amount": 0}])
         refund = _txn("R1", -10, 0, paypal_reference_id="PP1")
         txns = [_txn("PP1", 10, -1), refund]
         result = _filter_paypal_for_show(df, txns)
@@ -222,6 +258,46 @@ class TestBuildReconciliationTransferredVoided:
             "_order_refund_amount": [20.0],
         })
         totals_df, stats_df, *_ = build_reconciliation(df, [_txn("PP1", 20.0, -1.0)])
+        assert totals_df.empty
+        assert stats_df.empty
+
+
+class TestBuildReconciliationPaymentMethodFilter:
+    def test_non_paypal_tickets_excluded_from_totals_and_statistics(self):
+        df = pd.DataFrame({
+            "show":                 ["Carmilla", "Carmilla"],
+            "status":               ["complete", "complete"],
+            "performance_date":     pd.to_datetime(["2024-01-05", "2024-01-05"], utc=True),
+            "revenue":              [20.0, 50.0],
+            "quantity":             [1, 3],
+            "category":             ["Adult", "Adult"],
+            "paypal_txn_id":        ["", ""],
+            "_order_payment_type":  ["paypal", "cash"],
+            "_order_refund_amount": [0, 0],
+        })
+
+        totals_df, stats_df, *_ = build_reconciliation(df, [])
+
+        night1 = totals_df.drop(index="TOTAL").iloc[0]
+        assert night1["Gross (€)"] == 20.0       # only the PayPal ticket's revenue
+        assert night1["Transactions"] == 1        # only the PayPal ticket's quantity
+
+        stats_night1 = stats_df.drop(index="TOTAL").iloc[0]
+        assert stats_night1["Total Tickets"] == 1  # cash ticket excluded entirely
+
+    def test_show_with_only_non_paypal_tickets_returns_empty(self):
+        df = pd.DataFrame({
+            "show":                 ["Carmilla"],
+            "status":               ["complete"],
+            "performance_date":     pd.to_datetime(["2024-01-05"], utc=True),
+            "revenue":              [20.0],
+            "quantity":             [1],
+            "category":             ["Adult"],
+            "paypal_txn_id":        [""],
+            "_order_payment_type":  ["cash"],
+            "_order_refund_amount": [0],
+        })
+        totals_df, stats_df, *_ = build_reconciliation(df, [])
         assert totals_df.empty
         assert stats_df.empty
 
