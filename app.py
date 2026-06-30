@@ -27,7 +27,6 @@ if _auth_status is False:
 elif not _auth_status:
     st.stop()
 
-# Authenticated — render dashboard
 _authenticator.logout("Logout", "sidebar")
 
 from ssg_dashboard.main import main

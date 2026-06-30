@@ -7,12 +7,11 @@ from datetime import date, datetime
 import pandas as pd
 from fpdf import FPDF
 
-_M      = 15    # page margin mm
+_M      = 15
 _CW     = 267   # content width for A4 landscape (297 - 2×15)
-_ROW_H  = 6     # table row height mm
-_HEAD_H = 7     # header row height mm
+_ROW_H  = 6
+_HEAD_H = 7
 
-# Explicit chart palette — avoids kaleido colour rendering issues with px defaults
 _CHART_COLORS = [
     "#4472C4", "#ED7D31", "#70AD47", "#FFC000",
     "#5B9BD5", "#A9D18E", "#FF0000", "#7030A0",
@@ -31,14 +30,11 @@ _COL_PASS_BG    = (220, 240, 220)
 _COL_FAIL_BG    = (250, 225, 200)
 
 _FONT_CANDIDATES = [
-    # macOS
     ("/Library/Fonts/Arial Unicode.ttf",                              None),
     ("/System/Library/Fonts/Supplemental/Arial.ttf",
      "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
-    # Windows
     ("C:/Windows/Fonts/arialuni.ttf",  None),
     ("C:/Windows/Fonts/arial.ttf",     "C:/Windows/Fonts/arialbd.ttf"),
-    # Linux
     ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
      "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
     ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -51,7 +47,6 @@ def _register_fonts(pdf: FPDF) -> str:
     for regular, bold in _FONT_CANDIDATES:
         if os.path.exists(regular):
             pdf.add_font("U", "", regular)
-            # Use the bold variant if available, otherwise register the same file
             bold_path = bold if bold and os.path.exists(bold) else regular
             pdf.add_font("U", "B", bold_path)
             return "U"
@@ -333,7 +328,6 @@ def build_reconciliation_pdf(
 
     pdf.add_page()
 
-    # Title block
     pdf.set_font(family, "B", 18)
     pdf.set_text_color(*_COL_BODY)
     pdf.cell(0, 10, "Reconciliation Report", new_x="LMARGIN", new_y="NEXT")
@@ -344,7 +338,6 @@ def build_reconciliation_pdf(
     pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}",    new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
-    # PayPal summary strip
     if show_txns:
         gross = sum(t["gross"] for t in show_txns)
         fees  = sum(t["fee"]   for t in show_txns)
@@ -361,7 +354,6 @@ def build_reconciliation_pdf(
             ("Net",    f"{net:,.2f} €"),
         ], _COL_ALT_BG)
 
-    # Totals table
     _section(pdf, "Totals")
     if not totals_df.empty:
         rows, total_idx = _totals_table_data(totals_df)
@@ -378,7 +370,6 @@ def build_reconciliation_pdf(
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
-    # Statistics table + chart
     pdf.add_page()
     _section(pdf, "Statistics")
     cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
@@ -408,12 +399,10 @@ def build_reconciliation_pdf(
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
-    # ── Analytics pages (only when show_df provided) ─────────────────────────
     if show_df is not None and not show_df.empty:
         pdf.add_page()
 
-        # Left column: category pie chart
-        # Right column: yield & capacity metrics
+        # Two-column layout: pie chart on the left, yield/capacity metrics on the right
         pie_w   = 125.0
         right_x = _M + pie_w + 7
 
@@ -481,13 +470,11 @@ def build_reconciliation_pdf(
                      align="C")
             pdf.set_text_color(*_COL_BODY)
 
-        # Advance past the pie chart height before the next section
         pie_bottom = y_top + (pie_w * 480 / 700)  # derived from 700×480px aspect ratio
         if pdf.get_y() < pie_bottom:
             pdf.set_y(pie_bottom)
         pdf.ln(6)
 
-        # Sales trend — full width (start a new page if little room remains)
         if pdf.get_y() > pdf.h - 110:
             pdf.add_page()
         _section(pdf, "Sales Trend")
@@ -536,7 +523,7 @@ def build_reconciliation_pdf(
                     alignments=["L", "L", "R", "L", "R"],
                 )
 
-    # PayPal Reconciliation Check — always last
+    # This section must stay last — nothing else in the layout accounts for content after it
     if tt_gross is not None and pp_gross is not None:
         if pdf.get_y() > pdf.h - 80:
             pdf.add_page()

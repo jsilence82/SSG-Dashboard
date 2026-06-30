@@ -43,7 +43,6 @@ def render_repeat_buyers(filtered: pd.DataFrame) -> None:
             width="stretch")
 
     with c2:
-        # Order shows chronologically by first ticket sold if dates available
         if em["date"].notna().any():
             show_order = (em.groupby("show")["date"].min()
                           .sort_values().index.tolist())
