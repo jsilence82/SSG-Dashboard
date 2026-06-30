@@ -10,7 +10,7 @@ from ..config import DOW_ORDER
 def _night_label(pdate) -> str:
     """Format a performance datetime as 'Fri 7 Mar' — handles any datetime type."""
     try:
-        ts = pd.Timestamp(pdate)  # normalises numpy datetime64, pd.Timestamp, strings
+        ts = pd.Timestamp(pdate)
         return f"{ts.strftime('%a')} {ts.day} {ts.strftime('%b')}"
     except Exception:
         return str(pdate)

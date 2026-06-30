@@ -38,7 +38,6 @@ def get_credential(key: str) -> str:
       3. keyring     (local dev fallback)
     Returns an empty string when not found anywhere.
     """
-    # 1. Streamlit secrets
     try:
         value = st.secrets.get(key.lower())
         if value:
@@ -46,12 +45,10 @@ def get_credential(key: str) -> str:
     except Exception:
         pass
 
-    # 2. Environment variable
     env_val = os.environ.get(key.upper())
     if env_val:
         return env_val
 
-    # 3. keyring (local only)
     if _keyring_ok:
         try:
             return keyring.get_password(_SERVICE, key) or ""
@@ -85,8 +82,6 @@ def set_credential(key: str, value: str) -> None:
     )
 
 
-# ── Non-secret settings (JSON file) ──────────────────────────────────────────
-
 def load_settings() -> dict:
     if not SETTINGS_FILE.exists():
         return {}
@@ -104,8 +99,6 @@ def _write_settings(payload: dict) -> None:
     existing["saved_at"] = datetime.now(timezone.utc).isoformat()
     SETTINGS_FILE.write_text(json.dumps(existing), encoding="utf-8")
 
-
-# ── Ticket Tailor credentials ────────────────────────────────────────────────
 
 def save_api_key(api_key: str) -> None:
     set_credential("tt_api_key", api_key.strip())
@@ -125,8 +118,6 @@ def load_api_key() -> str:
             pass
     return old
 
-
-# ── Column mapping & capacity ────────────────────────────────────────────────
 
 def save_mapping_settings(mapping: dict, prices_in_cents: bool,
                            revenue_is_per_unit: bool, raw_columns: list | None = None) -> None:
@@ -152,8 +143,6 @@ def save_performance_dates(performance_dates: dict) -> None:
 def load_performance_dates() -> dict:
     return load_settings().get("performance_dates", {})
 
-
-# ── PayPal credentials ───────────────────────────────────────────────────────
 
 def save_paypal_settings(client_id: str, secret: str, sandbox: bool) -> None:
     set_credential("pp_client_id", client_id.strip())

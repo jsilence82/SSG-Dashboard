@@ -1,4 +1,5 @@
 import base64
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -8,6 +9,7 @@ from ssg_dashboard.api.tickettailor import (
     _process_event_series,
     _process_tt_raw,
     _tt_to_iso,
+    tt_fetch_all,
     tt_headers,
 )
 
@@ -156,3 +158,85 @@ class TestProcessEventSeries:
 
     def test_empty_input_returns_empty_dict(self):
         assert _process_event_series([]) == {}
+
+
+def _resp(status_code=200, json_data=None, text=""):
+    r = MagicMock()
+    r.status_code = status_code
+    r.json.return_value = json_data if json_data is not None else {}
+    r.text = text
+    return r
+
+
+class TestTtFetchAll:
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_single_page_returns_all_records(self, mock_get):
+        records = [{"id": f"e{i}"} for i in range(5)]
+        mock_get.return_value = _resp(json_data={"data": records})
+
+        result = tt_fetch_all("key", "events")
+
+        assert result == records
+        assert mock_get.call_count == 1
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_paginates_using_starting_after_cursor(self, mock_get):
+        page1 = [{"id": f"e{i}"} for i in range(100)]
+        page2 = [{"id": "e100"}]
+        mock_get.side_effect = [
+            _resp(json_data={"data": page1}),
+            _resp(json_data={"data": page2}),
+        ]
+
+        result = tt_fetch_all("key", "events")
+
+        assert len(result) == 101
+        assert mock_get.call_count == 2
+        second_call_params = mock_get.call_args_list[1].kwargs["params"]
+        assert second_call_params["starting_after"] == "e99"
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_stops_when_page_smaller_than_limit(self, mock_get):
+        page1 = [{"id": "e1"}, {"id": "e2"}]
+        mock_get.return_value = _resp(json_data={"data": page1})
+
+        result = tt_fetch_all("key", "events")
+
+        assert result == page1
+        assert mock_get.call_count == 1
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_stops_when_last_record_has_no_id(self, mock_get):
+        full_page = [{"name": f"e{i}"} for i in range(100)]  # no "id" key — cursor unavailable
+        mock_get.return_value = _resp(json_data={"data": full_page})
+
+        result = tt_fetch_all("key", "events")
+
+        assert result == full_page
+        assert mock_get.call_count == 1
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_non_200_raises_runtime_error(self, mock_get):
+        mock_get.return_value = _resp(status_code=401, text="Unauthorized")
+
+        with pytest.raises(RuntimeError, match="401"):
+            tt_fetch_all("key", "events")
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_respects_max_pages_limit(self, mock_get):
+        full_page = [{"id": f"e{i}"} for i in range(100)]
+        mock_get.return_value = _resp(json_data={"data": full_page})
+
+        result = tt_fetch_all("key", "events", max_pages=3)
+
+        assert mock_get.call_count == 3
+        assert len(result) == 300
+
+    @patch("ssg_dashboard.api.tickettailor.requests.get")
+    def test_extracts_records_from_plain_list_response(self, mock_get):
+        records = [{"id": "e1"}, {"id": "e2"}]
+        mock_get.return_value = _resp(json_data=records)
+
+        result = tt_fetch_all("key", "events")
+
+        assert result == records

@@ -48,11 +48,9 @@ def _paypal_ids_for_show(show_df: pd.DataFrame) -> set[str]:
     if "paypal_txn_id" not in show_df.columns:
         return set()
 
-    # Active tickets — always included
     active  = _active(show_df)
     pp_ids  = set(active["paypal_txn_id"].dropna().astype(str).str.strip()) - {"", "nan"}
 
-    # Voided tickets from PayPal orders that were transferred (not refunded)
     if "status" in show_df.columns and "_order_payment_type" in show_df.columns:
         voided_mask = show_df["status"].fillna("").str.lower().isin({"void", "voided"})
         paypal_mask = show_df["_order_payment_type"].fillna("").str.lower() == "paypal"
@@ -134,7 +132,6 @@ def build_reconciliation(
                 if pid in txn_by_ppid and pid not in seen:
                     result.append(txn_by_ppid[pid])
                     seen.add(pid)
-                # Include the corresponding refund transaction if one exists
                 if pid in refund_by_orig and refund_by_orig[pid]["txn_id"] not in seen:
                     result.append(refund_by_orig[pid])
                     seen.add(refund_by_orig[pid]["txn_id"])
@@ -143,7 +140,6 @@ def build_reconciliation(
     totals_rows = []
     if "performance_date" in work.columns:
         for perf_date, grp in work.groupby("performance_date", sort=True):
-            # Include transferred-voided tickets for the same performance night
             vgrp = (
                 transferred_voided[transferred_voided["performance_date"] == perf_date]
                 if not transferred_voided.empty and "performance_date" in transferred_voided.columns
@@ -430,7 +426,6 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
     tt_gross = _active(df[df["show"] == show])["revenue"].sum()
     pp_gross = sum(t["gross"] for t in show_txns) if show_txns else None
 
-    # PDF download — covers Totals, Statistics, chart, and reconciliation summary
     if not totals_df.empty or not stats_df.empty:
         st.divider()
         with st.spinner("Building PDF…"):

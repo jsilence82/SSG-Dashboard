@@ -78,23 +78,19 @@ def build_canonical(df: pd.DataFrame, mapping: dict,
                         if mapping.get("email") else ""
     out["buyer_name"] = df[mapping["buyer_name"]].astype(str).str.lower().str.strip() \
                         if mapping.get("buyer_name") else ""
-    # Per-row buyer identity for repeat-buyer analysis: email when present,
-    # else fall back to the mapped name column (e.g. last name).
     out["buyer_id"] = out["email"].where(out["email"].astype(bool), out["buyer_name"])
     if mapping.get("occurrence") and mapping["occurrence"] in df.columns:
         out["occurrence"] = df[mapping["occurrence"]].astype(str)
-    elif "event_id" in df.columns:          # auto-use Ticket Tailor event_id
+    elif "event_id" in df.columns:
         out["occurrence"] = df["event_id"].astype(str)
     else:
         out["occurrence"] = ""
-    # Performance date: mapped column → auto-detected _performance_start from API
     if mapping.get("performance_date") and mapping["performance_date"] in df.columns:
         out["performance_date"] = _parse_date_column(df[mapping["performance_date"]])
     elif "_performance_start" in df.columns:
         out["performance_date"] = _parse_date_column(df["_performance_start"])
     else:
         out["performance_date"] = pd.NaT
-    # paypal_txn_id: use explicit mapping → auto-detect _paypal_txn_id from TT orders join → empty
     if mapping.get("paypal_txn_id") and mapping["paypal_txn_id"] in df.columns:
         out["paypal_txn_id"] = df[mapping["paypal_txn_id"]].astype(str).str.strip()
     elif "_paypal_txn_id" in df.columns:
