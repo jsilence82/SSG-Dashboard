@@ -5,6 +5,7 @@ import pytest
 
 from ssg_dashboard.sections.reconciliation import (
     _active,
+    _exclude_operator,
     _filter_paypal_for_show,
     _parse_tt_date,
     _paypal_ids_for_show,
@@ -262,97 +263,87 @@ class TestBuildReconciliationTransferredVoided:
         assert stats_df.empty
 
 
-class TestBuildReconciliationTotalPaid:
-    def test_operator_with_real_payment_included_in_gross(self):
-        """Operator-tagged tickets that were genuinely paid (total_paid > 0) must
-        contribute to Gross — they represent real money collected at the box office."""
+class TestExcludeOperator:
+    def test_operator_tickets_excluded(self):
+        df = _show_df([
+            {"status": "complete", "_order_payment_type": "operator", "revenue": 13.0, "quantity": 1},
+            {"status": "complete", "_order_payment_type": "paypal",   "revenue": 20.0, "quantity": 1},
+        ])
+        result = _exclude_operator(df)
+        assert len(result) == 1
+        assert result.iloc[0]["_order_payment_type"] == "paypal"
+
+    def test_no_cost_and_transfer_kept(self):
+        df = _show_df([
+            {"status": "complete", "_order_payment_type": "no_cost",  "revenue": 0.0,  "quantity": 1},
+            {"status": "complete", "_order_payment_type": "transfer", "revenue": 13.0, "quantity": 1},
+            {"status": "complete", "_order_payment_type": "paypal",   "revenue": 20.0, "quantity": 1},
+        ])
+        result = _exclude_operator(df)
+        assert len(result) == 3
+
+    def test_missing_column_returns_unchanged(self):
+        df = pd.DataFrame({"revenue": [10.0, 20.0]})
+        assert len(_exclude_operator(df)) == 2
+
+    def test_case_insensitive(self):
+        df = _show_df([{"status": "complete", "_order_payment_type": "Operator", "revenue": 13.0}])
+        assert _exclude_operator(df).empty
+
+
+class TestBuildReconciliationPaymentMethodFilter:
+    def test_operator_tickets_excluded_from_gross(self):
+        """Operator-paid tickets (box-office manual entries, never through PayPal)
+        must be excluded from Ticket Tailor gross."""
         df = pd.DataFrame({
-            "show":                 ["Tartuffe"] * 4,
-            "status":               ["valid"] * 4,
-            "performance_date":     pd.to_datetime(["2025-05-09"] * 4, utc=True),
-            "revenue":              [22.0, 22.0, 13.0, 13.0],
-            "quantity":             [1, 1, 1, 1],
-            "category":             ["Adult"] * 4,
-            "paypal_txn_id":        ["PP1", "PP2", "", ""],
-            "_order_payment_type":  ["paypal", "paypal", "operator", "operator"],
-            "_order_refund_amount": [0, 0, 0, 0],
-            "_order_total_paid":    [22.0, 22.0, 13.0, 13.0],  # operator order was fully paid
+            "show":                ["Show"] * 3,
+            "status":              ["complete"] * 3,
+            "performance_date":    pd.to_datetime(["2024-01-05"] * 3, utc=True),
+            "revenue":             [20.0, 13.0, 13.0],
+            "quantity":            [1, 1, 1],
+            "category":            ["Adult"] * 3,
+            "paypal_txn_id":       ["PP1", "", ""],
+            "_order_payment_type": ["paypal", "operator", "operator"],
+            "_order_refund_amount":[0, 0, 0],
         })
-
         totals_df, *_ = build_reconciliation(df, [])
+        assert totals_df.loc["TOTAL"]["Gross (€)"] == 20.0
+        assert totals_df.loc["TOTAL"]["Transactions"] == 1  # only paypal ticket
 
-        total = totals_df.loc["TOTAL"]
-        assert total["Gross (€)"] == 70.0   # all 4 tickets — operator fully paid, included
-        assert total["Transactions"] == 4
-
-    def test_transferred_order_contributes_zero_gross(self):
-        """When total_paid=0 (order transferred elsewhere, nothing actually retained),
-        those tickets appear in ticket counts but contribute €0 to gross."""
+    def test_transfer_and_no_cost_included_in_gross(self):
+        """transfer/no_cost tickets flow through the same PayPal account and must
+        be counted at listed price, not excluded."""
         df = pd.DataFrame({
-            "show":                 ["Carmilla"] * 3,
-            "status":               ["complete"] * 3,
-            "performance_date":     pd.to_datetime(["2024-01-05"] * 3, utc=True),
-            "revenue":              [20.0, 13.0, 13.0],
-            "quantity":             [1, 1, 1],
-            "category":             ["Adult"] * 3,
-            "paypal_txn_id":        ["PP1", "", ""],
-            "_order_payment_type":  ["paypal", "no_cost", "no_cost"],
-            "_order_refund_amount": [0, 0, 0],
-            "_order_total_paid":    [20.0, 0.0, 0.0],  # no_cost order: total_paid=0 (transferred)
+            "show":                ["Show"] * 4,
+            "status":              ["complete"] * 4,
+            "performance_date":    pd.to_datetime(["2024-01-05"] * 4, utc=True),
+            "revenue":             [20.0, 13.0, 10.0, 5.0],
+            "quantity":            [1, 1, 1, 1],
+            "category":            ["Adult"] * 4,
+            "paypal_txn_id":       ["PP1", "", "", ""],
+            "_order_payment_type": ["paypal", "transfer", "no_cost", "operator"],
+            "_order_refund_amount":[0, 0, 0, 0],
         })
-
-        totals_df, stats_df, *_ = build_reconciliation(df, [])
-
-        night = totals_df.drop(index="TOTAL").iloc[0]
-        assert night["Gross (€)"] == 20.0       # only the paypal ticket's total_paid
-        assert night["Transactions"] == 3        # all 3 tickets still counted
-
-        stats = stats_df.drop(index="TOTAL").iloc[0]
-        assert stats["Total Tickets"] == 3       # ticket counts unaffected
-
-    def test_mixed_real_tartuffe_scenario(self):
-        """Mirrors the real Tartuffe data: paypal=3563, operator fully paid=26,
-        no_cost transferred=26 (total_paid=0). tt_gross should equal 3589."""
-        n = 293  # paypal tickets
-        df_paypal = pd.DataFrame({
-            "show":                ["Tartuffe"] * n,
-            "status":              ["valid"] * n,
-            "performance_date":    pd.to_datetime(["2025-05-09"] * n, utc=True),
-            "revenue":             [3563.0 / n] * n,
-            "quantity":            [1] * n,
-            "category":            ["Adult"] * n,
-            "paypal_txn_id":       ["PP"] * n,
-            "_order_payment_type": ["paypal"] * n,
-            "_order_refund_amount":[0] * n,
-            "_order_total_paid":   [3563.0 / n] * n,
-        })
-        df_operator = pd.DataFrame({
-            "show":                ["Tartuffe"] * 2,
-            "status":              ["valid"] * 2,
-            "performance_date":    pd.to_datetime(["2025-05-09"] * 2, utc=True),
-            "revenue":             [13.0, 13.0],
-            "quantity":            [1, 1],
-            "category":            ["Adult"] * 2,
-            "paypal_txn_id":       ["", ""],
-            "_order_payment_type": ["operator"] * 2,
-            "_order_refund_amount":[0, 0],
-            "_order_total_paid":   [13.0, 13.0],  # fully paid
-        })
-        df_nocost = pd.DataFrame({
-            "show":                ["Tartuffe"] * 10,
-            "status":              ["valid"] * 10,
-            "performance_date":    pd.to_datetime(["2025-05-09"] * 10, utc=True),
-            "revenue":             [2.6] * 10,
-            "quantity":            [1] * 10,
-            "category":            ["Adult"] * 10,
-            "paypal_txn_id":       [""] * 10,
-            "_order_payment_type": ["no_cost"] * 10,
-            "_order_refund_amount":[0] * 10,
-            "_order_total_paid":   [0.0] * 10,  # transferred — nothing actually paid
-        })
-        df = pd.concat([df_paypal, df_operator, df_nocost], ignore_index=True)
         totals_df, *_ = build_reconciliation(df, [])
-        assert totals_df.loc["TOTAL"]["Gross (€)"] == pytest.approx(3589.0, rel=1e-3)
+        # paypal(20) + transfer(13) + no_cost(10) = 43; operator(5) excluded
+        assert totals_df.loc["TOTAL"]["Gross (€)"] == 43.0
+        assert totals_df.loc["TOTAL"]["Transactions"] == 3
+
+    def test_mirrors_real_tartuffe_numbers(self):
+        """paypal=3563 + no_cost=26 + operator=26; excluding operator gives 3589."""
+        df = pd.DataFrame({
+            "show":                ["Tartuffe"] * 4,
+            "status":              ["valid"] * 4,
+            "performance_date":    pd.to_datetime(["2025-05-09"] * 4, utc=True),
+            "revenue":             [3563.0, 26.0, 13.0, 13.0],
+            "quantity":            [293, 10, 1, 1],
+            "category":            ["Adult"] * 4,
+            "paypal_txn_id":       ["PP", "", "", ""],
+            "_order_payment_type": ["paypal", "no_cost", "operator", "operator"],
+            "_order_refund_amount":[0, 0, 0, 0],
+        })
+        totals_df, *_ = build_reconciliation(df, [])
+        assert totals_df.loc["TOTAL"]["Gross (€)"] == 3589.0
 
 
 class TestBuildReconciliationShowFilter:
