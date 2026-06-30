@@ -13,7 +13,7 @@ def sidebar_api_panel() -> None:
     if tt_label:
         st.sidebar.caption(f"📦 TT raw cache: {tt_label}")
 
-    cache_df, cache_at, _ = load_cache()
+    cache_df, cache_at, _, _ = load_cache()
     if cache_df is not None:
         st.sidebar.caption(f"💾 Canonical cache: {len(cache_df)} rows · {cache_age_label(cache_at)}")
 
