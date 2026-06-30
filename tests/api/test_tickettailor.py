@@ -3,7 +3,13 @@ import base64
 import pandas as pd
 import pytest
 
-from ssg_dashboard.api.tickettailor import _extract_records, _process_tt_raw, tt_headers
+from ssg_dashboard.api.tickettailor import (
+    _extract_records,
+    _process_event_series,
+    _process_tt_raw,
+    _tt_to_iso,
+    tt_headers,
+)
 
 
 TICKETS_RAW = [
@@ -98,3 +104,55 @@ class TestProcessTtRaw:
     def test_no_orders_returns_tickets_without_order_columns(self):
         tickets_df, _, _ = _process_tt_raw(TICKETS_RAW, EVENTS_RAW, [])
         assert "_paypal_txn_id" not in tickets_df.columns
+
+
+class TestTtToIso:
+    def test_unix_int_converted_to_iso(self):
+        assert _tt_to_iso(1704067200) == "2024-01-01T00:00:00+00:00"
+
+    def test_nested_dict_prefers_iso_field(self):
+        value = {"date": "2024-01-01", "formatted": "Jan 1, 2024",
+                 "iso": "2024-01-01T10:00:00+01:00", "time": "10:00:00",
+                 "timezone": "+01:00", "unix": 1704099600}
+        assert _tt_to_iso(value) == "2024-01-01T10:00:00+01:00"
+
+    def test_nested_dict_falls_back_to_formatted_when_no_iso(self):
+        assert _tt_to_iso({"formatted": "Jan 1, 2024", "unix": 1704067200}) == "Jan 1, 2024"
+
+    def test_nested_dict_falls_back_to_date_when_no_iso_or_formatted(self):
+        assert _tt_to_iso({"date": "2024-01-01", "unix": 1704067200}) == "2024-01-01"
+
+    def test_nested_dict_falls_back_to_unix_as_last_resort(self):
+        assert _tt_to_iso({"unix": 1704067200}) == "2024-01-01T00:00:00+00:00"
+
+    def test_string_passed_through(self):
+        assert _tt_to_iso("2024-01-01") == "2024-01-01"
+
+    def test_none_and_empty_return_none(self):
+        assert _tt_to_iso(None) is None
+        assert _tt_to_iso("") is None
+
+
+class TestProcessEventSeries:
+    def test_extracts_sale_window_by_show_name(self):
+        series = [{"id": "s1", "name": "Show A",
+                   "tickets_available_at": {"date": "2024-01-01", "formatted": "Jan 1, 2024",
+                                             "iso": "2024-01-01T00:00:00+00:00", "time": "00:00:00",
+                                             "timezone": "+00:00", "unix": 1704067200},
+                   "tickets_unavailable_at": {"date": "2024-02-01", "formatted": "Feb 1, 2024",
+                                               "iso": "2024-02-01T00:00:00+00:00", "time": "00:00:00",
+                                               "timezone": "+00:00", "unix": 1706745600}}]
+        result = _process_event_series(series)
+        assert result == {"Show A": {
+            "tickets_available_at": "2024-01-01T00:00:00+00:00",
+            "tickets_unavailable_at": "2024-02-01T00:00:00+00:00",
+        }}
+
+    def test_series_without_name_skipped(self):
+        assert _process_event_series([{"id": "s1", "tickets_available_at": 1}]) == {}
+
+    def test_series_without_dates_skipped(self):
+        assert _process_event_series([{"id": "s1", "name": "Show A"}]) == {}
+
+    def test_empty_input_returns_empty_dict(self):
+        assert _process_event_series([]) == {}

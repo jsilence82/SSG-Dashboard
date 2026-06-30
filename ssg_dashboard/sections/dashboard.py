@@ -16,11 +16,12 @@ from .reconciliation import render_reconciliation
 from .settings import render_settings
 
 
-def render_dashboard(data: pd.DataFrame, capacity_by_show: dict) -> None:
+def render_dashboard(data: pd.DataFrame, capacity_by_show: dict,
+                      performance_dates_by_show: dict | None = None) -> None:
     section = st.tabs(["📊 Analytics", "🧾 Reconciliation Report", "⚙️ Settings"])
 
     with section[0]:
-        _render_analytics(data, capacity_by_show)
+        _render_analytics(data, capacity_by_show, performance_dates_by_show or {})
 
     with section[1]:
         shows = sorted(data["show"].dropna().unique().tolist())
@@ -30,7 +31,8 @@ def render_dashboard(data: pd.DataFrame, capacity_by_show: dict) -> None:
         render_settings()
 
 
-def _render_analytics(data: pd.DataFrame, capacity_by_show: dict) -> None:
+def _render_analytics(data: pd.DataFrame, capacity_by_show: dict,
+                       performance_dates_by_show: dict) -> None:
     st.subheader("Filters")
     f1, f2 = st.columns([2, 1])
     with f1:
@@ -74,7 +76,7 @@ def _render_analytics(data: pd.DataFrame, capacity_by_show: dict) -> None:
         render_time_trend(filtered)
     with tabs[5]:
         st.subheader("Yield & Capacity")
-        render_yield_capacity(filtered, capacity_by_show)
+        render_yield_capacity(filtered, capacity_by_show, performance_dates_by_show)
     with tabs[6]:
         st.subheader("Audience Retention")
         render_repeat_buyers(filtered)

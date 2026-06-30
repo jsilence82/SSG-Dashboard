@@ -145,6 +145,14 @@ def load_capacities() -> dict:
     return load_settings().get("capacity", {})
 
 
+def save_performance_dates(performance_dates: dict) -> None:
+    _write_settings({"performance_dates": {k: v for k, v in performance_dates.items() if v}})
+
+
+def load_performance_dates() -> dict:
+    return load_settings().get("performance_dates", {})
+
+
 # ── PayPal credentials ───────────────────────────────────────────────────────
 
 def save_paypal_settings(client_id: str, secret: str, sandbox: bool) -> None:
