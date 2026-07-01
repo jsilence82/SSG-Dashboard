@@ -90,7 +90,7 @@ class _PDF(FPDF):
         self.set_y(-12)
         self.set_font(self._family, "", 8)
         self.set_text_color(*_COL_MUTED)
-        self.cell(0, 10, f"Page {self.page_no()}", align="C")
+        self.cell(0, 10, f"Seite {self.page_no()}", align="C")
 
 
 def _section(pdf: _PDF, title: str) -> None:
@@ -202,7 +202,7 @@ def _pie_png(show_df: pd.DataFrame) -> bytes | None:
         )
         for t in autotexts:
             t.set_fontsize(9)
-        ax.set_title("Ticket Category Breakdown", fontsize=11)
+        ax.set_title("Details zu den Ticketkategorien", fontsize=11)
         fig.tight_layout()
         return _mpl_to_png(fig)
     except Exception:
@@ -227,9 +227,9 @@ def _trend_png(show_df: pd.DataFrame) -> bytes | None:
         color = "#4472C4"
         ax.fill_between(ts["day_number"], ts["cumulative"], alpha=0.15, color=color)
         ax.plot(ts["day_number"], ts["cumulative"], color=color, linewidth=2, marker="o", markersize=4)
-        ax.set_title("Cumulative ticket sales", fontsize=11)
-        ax.set_xlabel("Days since first sale")
-        ax.set_ylabel("Total tickets sold")
+        ax.set_title("Kumulative Ticketverkäufe", fontsize=11)
+        ax.set_xlabel("Tage seit erster Verkauf")
+        ax.set_ylabel("Gesamtzahl der verkauften Tickets")
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -255,8 +255,8 @@ def _daily_png(show_df: pd.DataFrame) -> bytes | None:
         ax.set_xticks(range(len(labels)))
         ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
         ax.set_title("Daily ticket sales", fontsize=11)
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Tickets sold")
+        ax.set_xlabel("Datum")
+        ax.set_ylabel("verkaufte Tickets")
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -280,10 +280,10 @@ def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
             bottom += vals
         ax.set_xticks(x)
         ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
-        ax.set_title("Ticket categories per night", fontsize=11)
-        ax.set_xlabel("Performance Date")
+        ax.set_title("Ticketkategorien pro Nacht", fontsize=11)
+        ax.set_xlabel("Aufführungsdatum")
         ax.set_ylabel("Tickets")
-        ax.legend(title="Category", bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+        ax.legend(title="Kategorie", bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -338,9 +338,9 @@ def build_reconciliation_pdf(
     pdf.ln(4)
 
     if show_txns:
-        gross = sum(t["Butto"] for t in show_txns)
-        fees  = sum(t["Gebühren"]   for t in show_txns)
-        net   = sum(t["Netto"]   for t in show_txns)
+        gross = sum(t["gross"] for t in show_txns)
+        fees  = sum(t["fee"]   for t in show_txns)
+        net   = sum(t["net"]   for t in show_txns)
         pdf.set_font(family, "B", 9)
         pdf.set_text_color(*_COL_MUTED)
         pdf.cell(0, 6, "Bitte geben Sie die folgenden Werte in Ihre Abrechnung ein",
@@ -371,7 +371,7 @@ def build_reconciliation_pdf(
 
     pdf.add_page()
     _section(pdf, "Statistics")
-    cat_cols = [c for c in stats_df.columns if c not in ("Aufführungsdatum", "Gesamtanzahl Tickets")]
+    cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
 
     if not stats_df.empty and cat_cols:
         date_w  = 75.0
