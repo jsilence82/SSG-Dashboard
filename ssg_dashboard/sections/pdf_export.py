@@ -330,35 +330,34 @@ def build_reconciliation_pdf(
 
     pdf.set_font(family, "B", 18)
     pdf.set_text_color(*_COL_BODY)
-    pdf.cell(0, 10, "Reconciliation Report", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(family, "", 10)
     pdf.set_text_color(*_COL_MUTED)
-    pdf.cell(0, 6, f"Production: {show}",                                          new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, pdf._f(f"Date range: {pp_start}  →  {pp_end}"),    new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, f"Generated: {datetime.now().strftime('%d %b %Y  %H:%M')}",    new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, f"Produktion: {show}",                                          new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, pdf._f(f"Zeitraum: {pp_start}  →  {pp_end}"),    new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, f"Erstellt am: {datetime.now().strftime('%d %b %Y  %H:%M')}",    new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     if show_txns:
-        gross = sum(t["gross"] for t in show_txns)
-        fees  = sum(t["fee"]   for t in show_txns)
-        net   = sum(t["net"]   for t in show_txns)
+        gross = sum(t["Butto"] for t in show_txns)
+        fees  = sum(t["Gebühren"]   for t in show_txns)
+        net   = sum(t["Netto"]   for t in show_txns)
         pdf.set_font(family, "B", 9)
         pdf.set_text_color(*_COL_MUTED)
-        pdf.cell(0, 6, "Please enter the following values into your Abrechnung",
+        pdf.cell(0, 6, "Bitte geben Sie die folgenden Werte in Ihre Abrechnung ein",
                  new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(1)
         _metric_strip(pdf, [
-            ("Gross",  f"{gross:,.2f} €"),
-            ("Fees",   f"{fees:,.2f} €"),
-            ("Net",    f"{net:,.2f} €"),
+            ("Brutto",  f"{gross:,.2f} €"),
+            ("Gebühren",   f"{fees:,.2f} €"),
+            ("Netto",    f"{net:,.2f} €"),
         ], _COL_ALT_BG)
 
-    _section(pdf, "Totals")
+    _section(pdf, "Gesamtanzahl")
     if not totals_df.empty:
         rows, total_idx = _totals_table_data(totals_df)
         _draw_table(pdf,
-                    headers=["Performance Date", "Gross (€)", "Fees (€)", "Net (€)"],
+                    headers=["Aufführungsdatum", "Brutto (€)", "Gebühren (€)", "Netto (€)"],
                     rows=rows,
                     col_widths=[97.0, 22.0, 50.0, 49.0, 49.0],
                     alignments=["L", "R", "R", "R", "R"],
@@ -372,7 +371,7 @@ def build_reconciliation_pdf(
 
     pdf.add_page()
     _section(pdf, "Statistics")
-    cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
+    cat_cols = [c for c in stats_df.columns if c not in ("Aufführungsdatum", "Gesamtanzahl Tickets")]
 
     if not stats_df.empty and cat_cols:
         date_w  = 75.0
@@ -380,7 +379,7 @@ def build_reconciliation_pdf(
         cat_w   = round((_CW - date_w - total_w) / len(cat_cols), 1)
         rows, total_idx = _stats_table_data(stats_df, cat_cols)
         _draw_table(pdf,
-                    headers=["Performance Date", "Total"] + cat_cols,
+                    headers=["Aufführungsdatum", "Gesamtanzahl"] + cat_cols,
                     rows=rows,
                     col_widths=[date_w, total_w] + [cat_w] * len(cat_cols),
                     alignments=["L", "R"] + ["R"] * len(cat_cols),
@@ -395,7 +394,7 @@ def build_reconciliation_pdf(
     else:
         pdf.set_font(family, "I", 9)
         pdf.set_text_color(*_COL_MUTED)
-        pdf.cell(0, 8, "No category or performance date data available.", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, "Keine Kategorie- oder Aufführungsdaten verfügbar.", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
@@ -406,7 +405,7 @@ def build_reconciliation_pdf(
         pie_w   = 125.0
         right_x = _M + pie_w + 7
 
-        _section(pdf, "Ticket Category Breakdown")
+        _section(pdf, "Ticketkategorien")
         y_top = pdf.get_y()
 
         pie_png = _pie_png(show_df)
@@ -436,21 +435,21 @@ def build_reconciliation_pdf(
         pdf.set_xy(right_x, y_top)
         pdf.set_font(family, "B", 11)
         pdf.set_text_color(*_COL_SECTION_FG)
-        pdf.cell(right_w, 8, "Yield & Capacity", new_x="LEFT", new_y="NEXT")
+        pdf.cell(right_w, 8, "Ertrag & Kapazität", new_x="LEFT", new_y="NEXT")
         pdf.set_draw_color(*_COL_BORDER)
         pdf.line(right_x, pdf.get_y(), right_x + right_w, pdf.get_y())
         pdf.set_xy(right_x, pdf.get_y() + 4)
         pdf.set_text_color(*_COL_BODY)
 
-        _right_cell("Total Tickets Sold", str(total_tickets), _COL_ALT_BG)
-        _right_cell("Total Revenue",      f"{total_revenue:,.2f} €", _COL_WHITE)
+        _right_cell("Gesamtanzahl Tickets verkauft", str(total_tickets), _COL_ALT_BG)
+        _right_cell("Gesamtvermögen",      f"{total_revenue:,.2f} €", _COL_WHITE)
 
         if capacity > 0:
             sell_through = total_tickets / capacity * 100
             rev_per_seat = total_revenue / capacity
-            _right_cell("Capacity",       str(capacity),             _COL_ALT_BG)
-            _right_cell("Sell-through",   f"{sell_through:.1f}%",    _COL_WHITE, bold=True)
-            _right_cell("Revenue / Seat", f"{rev_per_seat:.2f} €",   _COL_ALT_BG)
+            _right_cell("Kapazität",       str(capacity),             _COL_ALT_BG)
+            _right_cell("Verkaufsumsatz",   f"{sell_through:.1f}%",    _COL_WHITE, bold=True)
+            _right_cell("Umsatz / Sitzplatz", f"{rev_per_seat:.2f} €",   _COL_ALT_BG)
 
             # Capacity fill bar spanning the right column
             bar_y = pdf.get_y() + 3
@@ -466,7 +465,7 @@ def build_reconciliation_pdf(
             pdf.set_font(family, "B", 8)
             pdf.set_text_color(255, 255, 255)
             pdf.cell(right_w, bar_h,
-                     f"{sell_through:.1f}% sold  ({total_tickets} / {capacity} seats)",
+                     f"{sell_through:.1f}% sold  ({total_tickets} / {capacity}  Sitzplätze)",
                      align="C")
             pdf.set_text_color(*_COL_BODY)
 
@@ -477,7 +476,7 @@ def build_reconciliation_pdf(
 
         if pdf.get_y() > pdf.h - 110:
             pdf.add_page()
-        _section(pdf, "Sales Trend")
+        _section(pdf, "Umsatzentwicklung")
         trend_png = _trend_png(show_df)
         if trend_png:
             if pdf.get_y() > pdf.h - 90:
@@ -487,7 +486,7 @@ def build_reconciliation_pdf(
         else:
             pdf.set_font(family, "", 9)
             pdf.set_text_color(*_COL_MUTED)
-            pdf.cell(0, 8, "No sale-date data available for trend chart.",
+            pdf.cell(0, 8, "Keine Verkaufsdaten verfügbar für den Trendgraph.",
                      new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*_COL_BODY)
             pdf.ln(4)
@@ -510,8 +509,8 @@ def build_reconciliation_pdf(
                 ts["day_number"] = (ts["day"] - ts["day"].min()).dt.days
                 peak = ts.loc[ts["tickets"].idxmax()]
                 _draw_table(pdf,
-                    headers=["First Sale", "Last Sale", "Selling Window",
-                             "Peak Day", "Peak Tickets"],
+                    headers=["Erste Verkauf", "Letzter Verkauf", "Verkaufszeitraum",
+                             "Höchster Tag", "Höchste Tickets"],
                     rows=[[
                         str(ts["day"].min().date()),
                         str(ts["day"].max().date()),
@@ -527,16 +526,16 @@ def build_reconciliation_pdf(
     if tt_gross is not None and pp_gross is not None:
         if pdf.get_y() > pdf.h - 80:
             pdf.add_page()
-        _section(pdf, "PayPal Reconciliation Check")
+        _section(pdf, "Ticket Taillor / PayPal Abgleich")
         diff   = round(pp_gross - tt_gross, 2)
         passed = abs(diff) < 0.02
         _metric_strip(pdf, [
-            ("Ticket Tailor Gross", f"{tt_gross:,.2f} €"),
-            ("PayPal Gross",        f"{pp_gross:,.2f} €"),
-            ("Difference",          f"{diff:,.2f} €"),
+            ("Ticket Tailor Brutto", f"{tt_gross:,.2f} €"),
+            ("PayPal Brutto",        f"{pp_gross:,.2f} €"),
+            ("Differenz",          f"{diff:,.2f} €"),
         ], _COL_PASS_BG if passed else _COL_FAIL_BG)
-        status = ("Reconciliation passed — values match." if passed else
-                  f"Difference of {diff:.2f} €. Check for refunds or transactions outside the date window.")
+        status = ("Abgleich erfolgreich — Werte stimmen überein." if passed else
+                  f"Unterschied von {diff:.2f} €. Prüfen Sie auf Rückerstattungen oder Transaktionen außerhalb des Zeitraums.")
         pdf.set_font(family, "B" if passed else "", 9)
         pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
         pdf.multi_cell(0, 6, pdf._f(status))
