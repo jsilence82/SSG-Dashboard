@@ -5,6 +5,8 @@ import io
 import pandas as pd
 import streamlit as st
 
+from ..i18n import t
+
 
 def render_detail_table(filtered: pd.DataFrame, by_show: pd.DataFrame,
                         by_category: pd.DataFrame) -> None:
@@ -20,6 +22,6 @@ def render_detail_table(filtered: pd.DataFrame, by_show: pd.DataFrame,
         by_show.to_excel(w, index=False, sheet_name="By show")
         by_category.to_excel(w, index=False, sheet_name="By category")
     e1, e2 = st.columns(2)
-    e1.download_button("⬇ CSV",   csv, "ssg_tickets.csv",   "text/csv")
-    e2.download_button("⬇ Excel", buf.getvalue(), "ssg_tickets.xlsx",
+    e1.download_button(t("csv_download"),   csv, "ssg_tickets.csv",   "text/csv")
+    e2.download_button(t("excel_download"), buf.getvalue(), "ssg_tickets.xlsx",
                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

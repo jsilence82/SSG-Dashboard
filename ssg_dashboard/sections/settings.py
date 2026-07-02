@@ -7,12 +7,14 @@ from ..api.tickettailor import load_from_tt_cache, refresh_from_api, tt_ping
 from ..config import CANONICAL_FIELDS
 from ..mapping import mapping_ui
 from ..persistence.paypal_cache import cache_status_label, clear_paypal_cache
+from ..i18n import t
 from ..persistence.settings import (
     _is_production,
     load_api_key,
     load_paypal_settings,
     load_settings,
     save_api_key,
+    save_language,
     save_mapping_settings,
     save_paypal_settings,
 )
@@ -23,6 +25,22 @@ def render_settings() -> None:
     raw_df   = st.session_state.get("raw_df")
     settings = load_settings()
 
+    st.subheader(t("settings_language_header"))
+    current_lang = st.session_state.get("lang", "en")
+    lang = st.radio(
+        t("language_label"),
+        options=["en", "de"],
+        format_func=lambda x: "English" if x == "en" else "Deutsch",
+        index=0 if current_lang == "en" else 1,
+        horizontal=True,
+        key="lang_radio",
+    )
+    if lang != current_lang:
+        st.session_state["lang"] = lang
+        save_language(lang)
+        st.rerun()
+
+    st.divider()
     st.subheader("🎟 Ticket Tailor")
 
     key = load_api_key()

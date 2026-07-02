@@ -144,6 +144,14 @@ def load_performance_dates() -> dict:
     return load_settings().get("performance_dates", {})
 
 
+def save_language(lang: str) -> None:
+    _write_settings({"language": lang})
+
+
+def load_language() -> str:
+    return load_settings().get("language", "en")
+
+
 def save_paypal_settings(client_id: str, secret: str, sandbox: bool) -> None:
     set_credential("pp_client_id", client_id.strip())
     set_credential("pp_client_secret", secret.strip())

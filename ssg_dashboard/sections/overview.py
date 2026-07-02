@@ -8,6 +8,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 
+from ..i18n import t
+
 
 def render_overview_bars(filtered: pd.DataFrame) -> None:
     by_show = (filtered.groupby("show", as_index=False)
@@ -15,11 +17,15 @@ def render_overview_bars(filtered: pd.DataFrame) -> None:
                .sort_values("tickets", ascending=False))
     c1, c2 = st.columns(2)
     with c1:
-        st.plotly_chart(px.bar(by_show, x="show", y="tickets", title="Tickets sold per show",
-                               labels={"show": "Show", "tickets": "Tickets"}), width="stretch")
+        st.plotly_chart(px.bar(by_show, x="show", y="tickets",
+                               title=t("tickets_sold_per_show"),
+                               labels={"show": t("show_label"), "tickets": t("tickets_label")}),
+                        width="stretch")
     with c2:
-        st.plotly_chart(px.bar(by_show, x="show", y="revenue", title="Revenue per show",
-                               labels={"show": "Show", "revenue": "Revenue (€)"}), width="stretch")
+        st.plotly_chart(px.bar(by_show, x="show", y="revenue",
+                               title=t("revenue_per_show"),
+                               labels={"show": t("show_label"), "revenue": t("revenue_label")}),
+                        width="stretch")
 
 
 def render_per_show_pies(filtered: pd.DataFrame) -> None:

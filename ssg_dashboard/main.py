@@ -10,6 +10,7 @@ from .persistence.canonical import cache_age_label, load_cache, save_cache
 from .persistence.settings import (
     load_api_key,
     load_capacities,
+    load_language,
     load_performance_dates,
     load_settings,
 )
@@ -28,6 +29,7 @@ def _settings_only_tabs() -> None:
 def main() -> None:
     if "initialized" not in st.session_state:
         st.session_state["initialized"] = True
+        st.session_state["lang"] = load_language()
         df, saved_at, cap, perf_dates = load_cache()
         if df is not None:
             st.session_state["canonical_df"]          = df

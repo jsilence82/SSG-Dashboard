@@ -7,6 +7,7 @@ import plotly.express as px
 import streamlit as st
 
 from ..api.paypal import pp_get_token
+from ..i18n import col_map, t
 from ..persistence.paypal_cache import (
     _in_range,
     cache_status_label,
@@ -115,6 +116,8 @@ def build_reconciliation(
     totals_df     — per-performance-date summary (mirrors the Totals sheet)
     statistics_df — ticket category breakdown per night (mirrors the Statistics sheet)
     unmatched_df  — PayPal transactions with no matching TT entry (flag for review)
+
+    Internal column names are always English — callers rename for display.
     """
     show_df = df[df["show"] == show_filter].copy() if show_filter else df.copy()
     work = _active(_exclude_operator(show_df))
@@ -238,25 +241,22 @@ def build_reconciliation(
 
 
 def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
-    st.subheader("🧾 Reconciliation Report")
-    st.markdown(
-        "Generates **Totals** and **Statistics** tables for a selected production, "
-        "cross-referenced with PayPal transaction data where available."
-    )
+    st.subheader(t("recon_title"))
+    st.markdown(t("recon_desc"))
 
     token_ready = bool(st.session_state.get("paypal_token"))
     if token_ready:
         env_label = "Sandbox" if st.session_state.get("paypal_sandbox") else "Live"
-        st.caption(f"✓ PayPal connected · {env_label} (token active for this session)")
+        st.caption(t("paypal_connected", env=env_label))
     else:
         pp_cid, _, _ = load_paypal_settings()
         if pp_cid:
-            st.info("💡 PayPal credentials configured but no active token — go to ⚙️ Settings to connect.")
+            st.info(t("paypal_no_token"))
         else:
-            st.info("💡 PayPal not configured — go to ⚙️ Settings to add credentials and connect.")
+            st.info(t("paypal_not_configured"))
 
     st.divider()
-    show = st.selectbox("Production to report", shows, key="recon_show")
+    show = st.selectbox(t("production_to_report"), shows, key="recon_show")
 
     work     = _active(_exclude_operator(df))
     show_df  = work[work["show"] == show]
@@ -287,9 +287,9 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
 
     cd1, cd2 = st.columns(2)
     with cd1:
-        pp_start = st.date_input("PayPal search from", value=d_start.date(), key=f"pp_start_{show}")
+        pp_start = st.date_input(t("pp_search_from"), value=d_start.date(), key=f"pp_start_{show}")
     with cd2:
-        pp_end   = st.date_input("PayPal search to",   value=d_end.date(),   key=f"pp_end_{show}")
+        pp_end   = st.date_input(t("pp_search_to"),   value=d_end.date(),   key=f"pp_end_{show}")
 
     cache_label = cache_status_label()
     if cache_label:
@@ -298,19 +298,16 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
             _, c_start, c_end, _ = cached_result
             fully_covered = (pp_start >= c_start and pp_end <= c_end)
             if fully_covered:
-                st.success(f"✓ Cache covers this date range — no API call needed.  \n📦 {cache_label}")
+                st.success(t("cache_covers", label=cache_label))
             else:
                 missing_parts = []
                 if pp_start < c_start:
                     missing_parts.append(f"{pp_start} → {c_start}")
                 if pp_end > c_end:
                     missing_parts.append(f"{c_end} → {pp_end}")
-                st.info(
-                    f"📦 Cache: {cache_label}  \n"
-                    f"⬇️ Will fetch missing portion(s): {', '.join(missing_parts)}"
-                )
+                st.info(t("cache_partial", label=cache_label, parts=", ".join(missing_parts)))
     else:
-        st.info("📭 No PayPal cache yet — first load will fetch from the API and save locally.")
+        st.info(t("no_pp_cache"))
 
     paypal_txns: list[dict] = st.session_state.get("paypal_txns_cache", [])
 
@@ -325,18 +322,18 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
 
     cf1, cf2 = st.columns(2)
     with cf1:
-        if st.button("📊 Generate Report"):
+        if st.button(t("generate_report")):
             cached_result = load_paypal_cache()
             if cached_result and pp_start >= cached_result[1] and pp_end <= cached_result[2]:
                 txns = _in_range(cached_result[0], pp_start, pp_end)
                 st.session_state["paypal_txns_cache"] = txns
                 paypal_txns = txns
-                st.success(f"Loaded {len(txns)} transactions from cache.")
+                st.success(t("loaded_from_cache", n=len(txns)))
             else:
                 token   = st.session_state.get("paypal_token")
                 sandbox = st.session_state.get("paypal_sandbox", False)
                 if not token:
-                    st.warning("Connect to PayPal first using 'Test & get token' above.")
+                    st.warning(t("connect_paypal_first"))
                 else:
                     env = "Sandbox" if sandbox else "Live"
                     with st.spinner(f"Loading PayPal transactions ({env})…"):
@@ -346,22 +343,22 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                             )
                             st.session_state["paypal_txns_cache"] = txns
                             paypal_txns = txns
-                            st.success(f"Loaded {len(txns)} transactions for date range ({env}).")
+                            st.success(t("loaded_transactions", n=len(txns), env=env))
                         except PermissionError as exc:
                             st.error(str(exc))
                         except Exception as exc:
-                            st.error(f"Load failed ({env}): {exc}")
+                            st.error(t("load_failed", env=env, exc=exc))
     with cf2:
-        if st.button("🔄 Force refresh from API and Generate"):
+        if st.button(t("force_refresh")):
             token   = st.session_state.get("paypal_token")
             saved_cid, saved_secret, saved_sandbox = load_paypal_settings()
             sandbox = st.session_state.get("paypal_sandbox", saved_sandbox)
 
             if not token:
                 if not saved_cid or not saved_secret:
-                    st.error("No PayPal credentials saved — configure them in ⚙️ Settings.")
+                    st.error(t("no_pp_creds"))
                 else:
-                    with st.spinner("Connecting to PayPal…"):
+                    with st.spinner(t("connecting_paypal")):
                         ok, result = pp_get_token(saved_cid, saved_secret, saved_sandbox)
                     if ok:
                         token = result
@@ -369,7 +366,7 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                         st.session_state["paypal_sandbox"] = saved_sandbox
                         sandbox = saved_sandbox
                     else:
-                        st.error(f"Could not obtain PayPal token: {result}")
+                        st.error(t("could_not_get_token", result=result))
 
             if token:
                 env = "Sandbox" if sandbox else "Live"
@@ -380,38 +377,36 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                         )
                         st.session_state["paypal_txns_cache"] = txns
                         paypal_txns = txns
-                        st.success(f"Refreshed — {len(txns)} transactions ({env}).")
+                        st.success(t("refreshed", n=len(txns), env=env))
                     except PermissionError as exc:
                         st.error(str(exc))
                     except Exception as exc:
-                        st.error(f"Refresh failed ({env}): {exc}")
+                        st.error(t("refresh_failed", env=env, exc=exc))
 
     st.divider()
     totals_df, stats_df, unmatched_df, show_txns = build_reconciliation(
         df, paypal_txns, show_filter=show
     )
 
-    st.markdown(f"### 💰 Totals — {show}")
+    st.markdown(t("totals_header", show=show))
 
     if show_txns:
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Matched transactions", len(show_txns))
-        m2.metric("Gross", f"€{sum(t['gross'] for t in show_txns):,.2f}")
-        m3.metric("Fees",  f"€{sum(t['fee']   for t in show_txns):,.2f}")
-        m4.metric("Net",   f"€{sum(t['net']   for t in show_txns):,.2f}")
+        m1.metric(t("matched_transactions"), len(show_txns))
+        m2.metric(t("gross"), f"€{sum(tx['gross'] for tx in show_txns):,.2f}")
+        m3.metric(t("fees"),  f"€{sum(tx['fee']   for tx in show_txns):,.2f}")
+        m4.metric(t("net"),   f"€{sum(tx['net']   for tx in show_txns):,.2f}")
 
+    cmap = col_map()
     if not totals_df.empty:
-        body  = totals_df.drop(index="TOTAL", errors="ignore")
-        total = totals_df.loc[["TOTAL"]] if "TOTAL" in totals_df.index else pd.DataFrame()
+        body  = totals_df.drop(index="TOTAL", errors="ignore").rename(columns=cmap)
+        total = totals_df.loc[["TOTAL"]].rename(columns=cmap) if "TOTAL" in totals_df.index else pd.DataFrame()
         st.dataframe(body, width="stretch", hide_index=True)
         if not total.empty:
-            st.markdown("**Totals**")
+            st.markdown(t("totals_sub"))
             st.dataframe(total, width="stretch", hide_index=True)
     else:
-        st.info(
-            "No performance date data found. "
-            "Ensure the **performance_date** column is mapped and tickets have dates."
-        )
+        st.info(t("no_perf_date_data"))
         simple = (
             _active(_exclude_operator(df[df["show"] == show]))
             .groupby("show")
@@ -421,32 +416,36 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
         st.dataframe(simple.style.format({"Revenue": "€{:.2f}"}), width="stretch")
 
     st.divider()
-    st.markdown(f"### 🎟 Statistics — {show}")
+    st.markdown(t("stats_header", show=show))
 
     if not stats_df.empty:
-        body_s  = stats_df.drop(index="TOTAL", errors="ignore")
-        total_s = stats_df.loc[["TOTAL"]] if "TOTAL" in stats_df.index else pd.DataFrame()
+        body_s  = stats_df.drop(index="TOTAL", errors="ignore").rename(columns=cmap)
+        total_s = stats_df.loc[["TOTAL"]].rename(columns=cmap) if "TOTAL" in stats_df.index else pd.DataFrame()
         st.dataframe(body_s, width="stretch", hide_index=True)
         if not total_s.empty:
-            st.markdown("**Totals**")
+            st.markdown(t("totals_sub"))
             st.dataframe(total_s, width="stretch", hide_index=True)
 
         cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
         if cat_cols:
             plot_df = stats_df.drop(index="TOTAL", errors="ignore").copy()
             fig = px.bar(plot_df, x="Performance Date", y=cat_cols, barmode="stack",
-                         title="Ticket categories per night",
-                         labels={"value": "Tickets", "variable": "Category"})
+                         title=t("tickets_per_category"),
+                         labels={
+                             "Performance Date": t("col_performance_date"),
+                             "value": t("tickets_label"),
+                             "variable": t("category_label"),
+                         })
             st.plotly_chart(fig, width="stretch")
     else:
-        st.info("No category or performance date data available for the Statistics table.")
+        st.info(t("no_category_data"))
 
     tt_gross = _active(_exclude_operator(df[df["show"] == show]))["revenue"].sum()
-    pp_gross = sum(t["gross"] for t in show_txns) if show_txns else None
+    pp_gross = sum(tx["gross"] for tx in show_txns) if show_txns else None
 
     if not totals_df.empty or not stats_df.empty:
         st.divider()
-        with st.spinner("Building PDF…"):
+        with st.spinner(t("building_pdf")):
             try:
                 pdf_bytes = build_reconciliation_pdf(
                     show       = show,
@@ -462,32 +461,29 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                 )
                 safe_show = show.replace(" ", "_").replace("/", "-")
                 st.download_button(
-                    "⬇️ Download PDF Report",
+                    t("pdf_download"),
                     data      = pdf_bytes,
                     file_name = f"{safe_show}_reconciliation.pdf",
                     mime      = "application/pdf",
                 )
             except Exception as exc:
-                st.error(f"PDF generation failed: {exc}")
+                st.error(t("pdf_failed", exc=exc))
 
     if show_txns:
         st.divider()
-        st.markdown("### ✅ PayPal Reconciliation Check")
+        st.markdown(t("recon_check"))
         diff = round(pp_gross - tt_gross, 2)
 
         ca, cb, cc = st.columns(3)
-        ca.metric("Ticket Tailor gross", f"€{tt_gross:,.2f}")
-        cb.metric("PayPal gross",        f"€{pp_gross:,.2f}")
-        cc.metric("Difference", f"€{diff:,.2f}",
+        ca.metric(t("tt_gross_label"), f"€{tt_gross:,.2f}")
+        cb.metric(t("pp_gross_label"), f"€{pp_gross:,.2f}")
+        cc.metric(t("difference_label"), f"€{diff:,.2f}",
                   delta_color="normal" if abs(diff) < 0.02 else "inverse")
 
         if abs(diff) < 0.02:
-            st.success("✓ Values match — reconciliation passed.")
+            st.success(t("recon_passed"))
         else:
-            st.warning(
-                f"⚠️ Difference of €{diff:.2f}. "
-                "Check for refunds, fees, or transactions outside the date window."
-            )
+            st.warning(t("recon_diff_warning", diff=diff))
             excluded = (
                 _active(df[df["show"] == show])
                 .loc[lambda d: d["_order_payment_type"].fillna("").str.lower() == "operator"]
@@ -497,10 +493,10 @@ def render_reconciliation(df: pd.DataFrame, shows: list[str]) -> None:
                 .rename(columns={"_order_payment_type": "Payment type"})
             )
             if not excluded.empty:
-                st.caption("Revenue excluded from Ticket Tailor gross (operator-only — box-office sales never processed through PayPal):")
+                st.caption(t("operator_excluded"))
                 st.dataframe(excluded.style.format({"Revenue": "€{:.2f}"}),
                              width="stretch", hide_index=True)
 
         if not unmatched_df.empty:
-            st.markdown("**PayPal transactions with no matching Ticket Tailor entry:**")
+            st.markdown(t("unmatched_header"))
             st.dataframe(unmatched_df, width="stretch", hide_index=True)

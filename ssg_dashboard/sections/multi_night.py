@@ -5,6 +5,7 @@ import plotly.express as px
 import streamlit as st
 
 from ..config import DOW_ORDER
+from ..i18n import t
 
 
 def _night_label(pdate) -> str:
@@ -23,7 +24,7 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
                  filtered["performance_date"].notna().any())
 
     if has_pdate:
-        st.markdown("### Nights by day of week — all shows")
+        st.markdown(t("nights_by_dow"))
         all_perf = filtered[filtered["performance_date"].notna()].copy()
         all_perf["dow"] = all_perf["performance_date"].dt.day_name()
 
@@ -35,16 +36,16 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
         c1, c2 = st.columns(2)
         with c1:
             fig = px.bar(by_dow, x="dow", y="tickets",
-                         title="Tickets sold by day of week",
-                         labels={"dow": "Day", "tickets": "Tickets"},
+                         title=t("tickets_by_dow"),
+                         labels={"dow": t("day_label"), "tickets": t("tickets_label")},
                          text="tickets",
                          category_orders={"dow": DOW_ORDER})
             fig.update_traces(textposition="outside")
             st.plotly_chart(fig, width="stretch")
         with c2:
             fig2 = px.bar(by_dow, x="dow", y="revenue",
-                          title="Revenue by day of week",
-                          labels={"dow": "Day", "revenue": "Revenue (€)"},
+                          title=t("revenue_by_dow"),
+                          labels={"dow": t("day_label"), "revenue": t("revenue_label")},
                           text="revenue",
                           category_orders={"dow": DOW_ORDER})
             fig2.update_traces(texttemplate="€%{text:,.0f}", textposition="outside")
@@ -56,19 +57,20 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
             st.plotly_chart(
                 px.bar(perf_by_show, x="dow", y="tickets", color="show",
                        barmode="group",
-                       title="Tickets by day of week, per show",
-                       labels={"dow": "Day", "tickets": "Tickets", "show": "Show"},
+                       title=t("tickets_by_dow_per_show"),
+                       labels={"dow": t("day_label"), "tickets": t("tickets_label"),
+                               "show": t("show_label")},
                        category_orders={"dow": DOW_ORDER}),
                 width="stretch")
 
-        st.dataframe(by_dow.rename(columns={"dow": "Day", "tickets": "Tickets",
-                                             "revenue": "Revenue (€)"}),
+        st.dataframe(by_dow.rename(columns={"dow": t("day_label"),
+                                             "tickets": t("tickets_label"),
+                                             "revenue": t("revenue_label")}),
                      width="stretch", hide_index=True)
         st.divider()
 
     if not has_occ and not has_pdate:
-        st.info("Map an occurrence ID or performance date column to enable multi-night analysis. "
-                "In Ticket Tailor data, occurrence maps to the `event_id` field.")
+        st.info(t("no_occ_data"))
         return
 
     occ_data = filtered.copy()
@@ -80,10 +82,10 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
     multi_shows = occ_counts[occ_counts > 1].index.tolist()
 
     if not multi_shows:
-        st.info("No shows with multiple nights found in the current data.")
+        st.info(t("no_multi_shows"))
         return
 
-    selected = st.selectbox("Select show", multi_shows, key="multinight_show")
+    selected = st.selectbox(t("select_show"), multi_shows, key="multinight_show")
     sd = occ_data[occ_data["show"] == selected].copy()
 
     if has_pdate and sd["performance_date"].notna().any():
@@ -94,12 +96,12 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
         night_order = [night_map[o] for o in occ_perf.index]
         for i, occ in enumerate(sd["occurrence"].unique()):
             if occ not in night_map:
-                night_map[occ] = f"Night {i+1}"
+                night_map[occ] = f"{t('night_prefix')} {i+1}"
     else:
         order_col = "date" if sd["date"].notna().any() else "occurrence"
         occ_order = (sd.groupby("occurrence")[order_col].min()
                      .sort_values().reset_index()["occurrence"])
-        night_map   = {occ: f"Night {i+1}" for i, occ in enumerate(occ_order)}
+        night_map   = {occ: f"{t('night_prefix')} {i+1}" for i, occ in enumerate(occ_order)}
         night_order = list(occ_order.map(night_map))
 
     sd["night"] = sd["occurrence"].map(night_map)
@@ -113,20 +115,20 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
     with c1:
         st.plotly_chart(
             px.bar(by_night, x="night", y="tickets", text="tickets",
-                   title=f"{selected} — tickets per night",
-                   labels={"night": "Night", "tickets": "Tickets"},
+                   title=f"{selected} — {t('tickets_per_night')}",
+                   labels={"night": t("night_label"), "tickets": t("tickets_label")},
                    category_orders={"night": night_order}),
             width="stretch")
     with c2:
         st.plotly_chart(
             px.bar(by_night, x="night", y="revenue", text="revenue",
-                   title=f"{selected} — revenue per night",
-                   labels={"night": "Night", "revenue": "Revenue (€)"},
+                   title=f"{selected} — {t('revenue_per_night')}",
+                   labels={"night": t("night_label"), "revenue": t("revenue_label")},
                    category_orders={"night": night_order}),
             width="stretch")
 
     if sd["date"].notna().any():
-        st.markdown("**Sales velocity — which night sold fastest?**")
+        st.markdown(t("sales_velocity"))
         ts = (sd.dropna(subset=["date"])
               .assign(day=lambda d: d["date"].dt.normalize())
               .groupby(["night", "day"], as_index=False)
@@ -137,10 +139,10 @@ def render_multi_night(filtered: pd.DataFrame) -> None:
         ts["cumulative"] = ts.groupby("night")["tickets"].cumsum()
         st.plotly_chart(
             px.line(ts, x="day_number", y="cumulative", color="night", markers=True,
-                    title=f"{selected} — cumulative sales per night "
-                          "(Day 0 = first sale per night)",
-                    labels={"day_number": "Days since first sale",
-                            "cumulative": "Tickets sold", "night": "Night"},
+                    title=f"{selected} — {t('cumulative_per_night')}",
+                    labels={"day_number": t("day_number_x"),
+                            "cumulative": t("cumulative_label"),
+                            "night": t("night_label")},
                     category_orders={"night": night_order}),
             width="stretch")
 

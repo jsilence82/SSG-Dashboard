@@ -7,6 +7,8 @@ from datetime import date, datetime
 import pandas as pd
 from fpdf import FPDF
 
+from ..i18n import t
+
 _M      = 15
 _CW     = 267   # content width for A4 landscape (297 - 2×15)
 _ROW_H  = 6
@@ -79,7 +81,7 @@ class _PDF(FPDF):
     def header(self):
         self.set_font(self._family, "B", 9)
         self.set_text_color(*_COL_MUTED)
-        self.cell(0, 6, self._f(f"SSG Ticket Sales Dashboard  ·  {self._show}"), align="L")
+        self.cell(0, 6, self._f(f"{t('pdf_header')}  ·  {self._show}"), align="L")
         self.ln(1)
         self.set_draw_color(*_COL_BORDER)
         self.line(_M, self.get_y(), self.w - _M, self.get_y())
@@ -90,7 +92,7 @@ class _PDF(FPDF):
         self.set_y(-12)
         self.set_font(self._family, "", 8)
         self.set_text_color(*_COL_MUTED)
-        self.cell(0, 10, f"Seite {self.page_no()}", align="C")
+        self.cell(0, 10, t("pdf_page", n=self.page_no()), align="C")
 
 
 def _section(pdf: _PDF, title: str) -> None:
@@ -146,7 +148,7 @@ def _totals_table_data(totals_df: pd.DataFrame):
     if "TOTAL" in totals_df.index:
         tr = totals_df.loc["TOTAL"]
         rows.append([
-            str(tr["Performance Date"]),
+            t("col_total_label"),
             f"{tr['Gross (€)']:,.2f} €",
             f"{tr['Fees (€)']:,.2f} €",
             f"{tr['Net (€)']:,.2f} €",
@@ -164,7 +166,7 @@ def _stats_table_data(stats_df: pd.DataFrame, cat_cols: list[str]):
     total_idx = None
     if "TOTAL" in stats_df.index:
         tr = stats_df.loc["TOTAL"]
-        rows.append([str(tr["Performance Date"]), str(int(tr["Total Tickets"]))]
+        rows.append([t("col_stats_total"), str(int(tr["Total Tickets"]))]
                     + [str(int(tr[c])) for c in cat_cols])
         total_idx = len(rows) - 1
     return rows, total_idx
@@ -200,9 +202,9 @@ def _pie_png(show_df: pd.DataFrame) -> bytes | None:
             startangle=90,
             wedgeprops=dict(width=0.75),
         )
-        for t in autotexts:
-            t.set_fontsize(9)
-        ax.set_title("Details zu den Ticketkategorien", fontsize=11)
+        for at in autotexts:
+            at.set_fontsize(9)
+        ax.set_title(t("pdf_pie_title"), fontsize=11)
         fig.tight_layout()
         return _mpl_to_png(fig)
     except Exception:
@@ -227,9 +229,9 @@ def _trend_png(show_df: pd.DataFrame) -> bytes | None:
         color = "#4472C4"
         ax.fill_between(ts["day_number"], ts["cumulative"], alpha=0.15, color=color)
         ax.plot(ts["day_number"], ts["cumulative"], color=color, linewidth=2, marker="o", markersize=4)
-        ax.set_title("Kumulative Ticketverkäufe", fontsize=11)
-        ax.set_xlabel("Tage seit erster Verkauf")
-        ax.set_ylabel("Gesamtzahl der verkauften Tickets")
+        ax.set_title(t("pdf_trend_title"), fontsize=11)
+        ax.set_xlabel(t("pdf_trend_x"))
+        ax.set_ylabel(t("pdf_trend_y"))
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -254,9 +256,9 @@ def _daily_png(show_df: pd.DataFrame) -> bytes | None:
         ax.bar(range(len(labels)), ts["tickets"], color="#ED7D31")
         ax.set_xticks(range(len(labels)))
         ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-        ax.set_title("Daily ticket sales", fontsize=11)
-        ax.set_xlabel("Datum")
-        ax.set_ylabel("verkaufte Tickets")
+        ax.set_title(t("pdf_daily_title"), fontsize=11)
+        ax.set_xlabel(t("pdf_daily_x"))
+        ax.set_ylabel(t("pdf_daily_y"))
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -280,10 +282,10 @@ def _chart_png(stats_df: pd.DataFrame, cat_cols: list[str]) -> bytes | None:
             bottom += vals
         ax.set_xticks(x)
         ax.set_xticklabels(x_labels, rotation=45, ha="right", fontsize=8)
-        ax.set_title("Ticketkategorien pro Nacht", fontsize=11)
-        ax.set_xlabel("Aufführungsdatum")
-        ax.set_ylabel("Tickets")
-        ax.legend(title="Kategorie", bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
+        ax.set_title(t("pdf_chart_title"), fontsize=11)
+        ax.set_xlabel(t("pdf_chart_x"))
+        ax.set_ylabel(t("tickets_label"))
+        ax.legend(title=t("pdf_chart_legend"), bbox_to_anchor=(1.01, 1), loc="upper left", fontsize=8)
         ax.grid(axis="y", linestyle="--", alpha=0.4)
         fig.tight_layout()
         return _mpl_to_png(fig)
@@ -332,32 +334,31 @@ def build_reconciliation_pdf(
     pdf.set_text_color(*_COL_BODY)
     pdf.set_font(family, "", 10)
     pdf.set_text_color(*_COL_MUTED)
-    pdf.cell(0, 6, f"Produktion: {show}",                                          new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, pdf._f(f"Zeitraum: {pp_start}  →  {pp_end}"),    new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, f"Erstellt am: {datetime.now().strftime('%d %b %Y  %H:%M')}",    new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, pdf._f(t("pdf_production", show=show)),                                      new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, pdf._f(t("pdf_period", start=pp_start, end=pp_end)),                         new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, t("pdf_generated", date=datetime.now().strftime("%d %b %Y  %H:%M")),         new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
 
     if show_txns:
-        gross = sum(t["gross"] for t in show_txns)
-        fees  = sum(t["fee"]   for t in show_txns)
-        net   = sum(t["net"]   for t in show_txns)
+        gross = sum(tx["gross"] for tx in show_txns)
+        fees  = sum(tx["fee"]   for tx in show_txns)
+        net   = sum(tx["net"]   for tx in show_txns)
         pdf.set_font(family, "B", 9)
         pdf.set_text_color(*_COL_MUTED)
-        pdf.cell(0, 6, "Bitte geben Sie die folgenden Werte in Ihre Abrechnung ein",
-                 new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 6, t("pdf_enter_values"), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(1)
         _metric_strip(pdf, [
-            ("Brutto",  f"{gross:,.2f} €"),
-            ("Gebühren",   f"{fees:,.2f} €"),
-            ("Netto",    f"{net:,.2f} €"),
+            (t("gross"),  f"{gross:,.2f} €"),
+            (t("fees"),   f"{fees:,.2f} €"),
+            (t("net"),    f"{net:,.2f} €"),
         ], _COL_ALT_BG)
 
-    _section(pdf, "Gesamtanzahl")
+    _section(pdf, t("pdf_totals_section"))
     if not totals_df.empty:
         rows, total_idx = _totals_table_data(totals_df)
         _draw_table(pdf,
-                    headers=["Aufführungsdatum", "Brutto (€)", "Gebühren (€)", "Netto (€)"],
+                    headers=[t("col_performance_date"), t("col_gross"), t("col_fees"), t("col_net")],
                     rows=rows,
                     col_widths=[97.0, 22.0, 50.0, 49.0, 49.0],
                     alignments=["L", "R", "R", "R", "R"],
@@ -365,12 +366,12 @@ def build_reconciliation_pdf(
     else:
         pdf.set_font(family, "I", 9)
         pdf.set_text_color(*_COL_MUTED)
-        pdf.cell(0, 8, "No performance date data available.", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, t("pdf_no_perf_data"), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
     pdf.add_page()
-    _section(pdf, "Statistics")
+    _section(pdf, t("pdf_stats_section"))
     cat_cols = [c for c in stats_df.columns if c not in ("Performance Date", "Total Tickets")]
 
     if not stats_df.empty and cat_cols:
@@ -379,7 +380,7 @@ def build_reconciliation_pdf(
         cat_w   = round((_CW - date_w - total_w) / len(cat_cols), 1)
         rows, total_idx = _stats_table_data(stats_df, cat_cols)
         _draw_table(pdf,
-                    headers=["Aufführungsdatum", "Gesamtanzahl"] + cat_cols,
+                    headers=[t("col_performance_date"), t("col_total_tickets")] + cat_cols,
                     rows=rows,
                     col_widths=[date_w, total_w] + [cat_w] * len(cat_cols),
                     alignments=["L", "R"] + ["R"] * len(cat_cols),
@@ -394,7 +395,7 @@ def build_reconciliation_pdf(
     else:
         pdf.set_font(family, "I", 9)
         pdf.set_text_color(*_COL_MUTED)
-        pdf.cell(0, 8, "Keine Kategorie- oder Aufführungsdaten verfügbar.", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 8, t("pdf_no_cat_data"), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_COL_BODY)
         pdf.ln(4)
 
@@ -405,7 +406,7 @@ def build_reconciliation_pdf(
         pie_w   = 125.0
         right_x = _M + pie_w + 7
 
-        _section(pdf, "Ticketkategorien")
+        _section(pdf, t("pdf_categories_section"))
         y_top = pdf.get_y()
 
         pie_png = _pie_png(show_df)
@@ -435,21 +436,21 @@ def build_reconciliation_pdf(
         pdf.set_xy(right_x, y_top)
         pdf.set_font(family, "B", 11)
         pdf.set_text_color(*_COL_SECTION_FG)
-        pdf.cell(right_w, 8, "Ertrag & Kapazität", new_x="LEFT", new_y="NEXT")
+        pdf.cell(right_w, 8, t("pdf_yield_section"), new_x="LEFT", new_y="NEXT")
         pdf.set_draw_color(*_COL_BORDER)
         pdf.line(right_x, pdf.get_y(), right_x + right_w, pdf.get_y())
         pdf.set_xy(right_x, pdf.get_y() + 4)
         pdf.set_text_color(*_COL_BODY)
 
-        _right_cell("Gesamtanzahl Tickets verkauft", str(total_tickets), _COL_ALT_BG)
-        _right_cell("Gesamtvermögen",      f"{total_revenue:,.2f} €", _COL_WHITE)
+        _right_cell(t("pdf_total_tickets_sold"), str(total_tickets), _COL_ALT_BG)
+        _right_cell(t("pdf_total_revenue"),      f"{total_revenue:,.2f} €", _COL_WHITE)
 
         if capacity > 0:
             sell_through = total_tickets / capacity * 100
             rev_per_seat = total_revenue / capacity
-            _right_cell("Kapazität",       str(capacity),             _COL_ALT_BG)
-            _right_cell("Verkaufsumsatz",   f"{sell_through:.1f}%",    _COL_WHITE, bold=True)
-            _right_cell("Umsatz / Sitzplatz", f"{rev_per_seat:.2f} €",   _COL_ALT_BG)
+            _right_cell(t("pdf_capacity"),    str(capacity),             _COL_ALT_BG)
+            _right_cell(t("pdf_sell_through"), f"{sell_through:.1f}%",   _COL_WHITE, bold=True)
+            _right_cell(t("pdf_rev_per_seat"), f"{rev_per_seat:.2f} €",  _COL_ALT_BG)
 
             # Capacity fill bar spanning the right column
             bar_y = pdf.get_y() + 3
@@ -465,7 +466,7 @@ def build_reconciliation_pdf(
             pdf.set_font(family, "B", 8)
             pdf.set_text_color(255, 255, 255)
             pdf.cell(right_w, bar_h,
-                     f"{sell_through:.1f}% sold  ({total_tickets} / {capacity}  Sitzplätze)",
+                     f"{sell_through:.1f}% {t('pdf_sold_label')}  ({total_tickets} / {capacity}  {t('pdf_seats_suffix')})",
                      align="C")
             pdf.set_text_color(*_COL_BODY)
 
@@ -476,7 +477,7 @@ def build_reconciliation_pdf(
 
         if pdf.get_y() > pdf.h - 110:
             pdf.add_page()
-        _section(pdf, "Umsatzentwicklung")
+        _section(pdf, t("pdf_revenue_trend"))
         trend_png = _trend_png(show_df)
         if trend_png:
             if pdf.get_y() > pdf.h - 90:
@@ -486,8 +487,7 @@ def build_reconciliation_pdf(
         else:
             pdf.set_font(family, "", 9)
             pdf.set_text_color(*_COL_MUTED)
-            pdf.cell(0, 8, "Keine Verkaufsdaten verfügbar für den Trendgraph.",
-                     new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 8, t("pdf_no_sales_data"), new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*_COL_BODY)
             pdf.ln(4)
 
@@ -498,7 +498,6 @@ def build_reconciliation_pdf(
             pdf.image(io.BytesIO(daily_png), x=_M, w=_CW)
             pdf.ln(4)
 
-        # Trend summary stats table (mirrors the analytics tab)
         if "date" in show_df.columns and show_df["date"].notna().any():
             ts = (show_df.dropna(subset=["date"])
                   .assign(day=lambda d: d["date"].dt.normalize())
@@ -509,33 +508,33 @@ def build_reconciliation_pdf(
                 ts["day_number"] = (ts["day"] - ts["day"].min()).dt.days
                 peak = ts.loc[ts["tickets"].idxmax()]
                 _draw_table(pdf,
-                    headers=["Erste Verkauf", "Letzter Verkauf", "Verkaufszeitraum",
-                             "Höchster Tag", "Höchste Tickets"],
+                    headers=[t("pdf_first_sale"), t("pdf_last_sale"), t("pdf_selling_window"),
+                             t("pdf_peak_day"), t("pdf_peak_tickets")],
                     rows=[[
                         str(ts["day"].min().date()),
                         str(ts["day"].max().date()),
-                        f"{int(ts['day_number'].max()) + 1} days",
-                        f"Day {int(peak['day_number'])}  ({peak['day'].date()})",
+                        f"{int(ts['day_number'].max()) + 1} {t('pdf_days_suffix')}",
+                        f"{t('pdf_day_prefix')} {int(peak['day_number'])}  ({peak['day'].date()})",
                         str(int(peak["tickets"])),
                     ]],
                     col_widths=[48.0, 48.0, 36.0, 85.0, 50.0],
                     alignments=["L", "L", "R", "L", "R"],
                 )
 
-    # This section must stay last — nothing else in the layout accounts for content after it
+    # This section must stay last
     if tt_gross is not None and pp_gross is not None:
         if pdf.get_y() > pdf.h - 80:
             pdf.add_page()
-        _section(pdf, "Ticket Taillor / PayPal Abgleich")
+        _section(pdf, t("pdf_recon_section"))
         diff   = round(pp_gross - tt_gross, 2)
         passed = abs(diff) < 0.02
         _metric_strip(pdf, [
-            ("Ticket Tailor Brutto", f"{tt_gross:,.2f} €"),
-            ("PayPal Brutto",        f"{pp_gross:,.2f} €"),
-            ("Differenz",          f"{diff:,.2f} €"),
+            (t("pdf_tt_gross"), f"{tt_gross:,.2f} €"),
+            (t("pdf_pp_gross"), f"{pp_gross:,.2f} €"),
+            (t("pdf_diff"),     f"{diff:,.2f} €"),
         ], _COL_PASS_BG if passed else _COL_FAIL_BG)
-        status = ("Abgleich erfolgreich — Werte stimmen überein." if passed else
-                  f"Unterschied von {diff:.2f} €. Prüfen Sie auf Rückerstattungen oder Transaktionen außerhalb des Zeitraums.")
+        status = (t("pdf_recon_passed") if passed else
+                  t("pdf_recon_diff", diff=diff))
         pdf.set_font(family, "B" if passed else "", 9)
         pdf.set_text_color(0, 100, 0) if passed else pdf.set_text_color(160, 60, 0)
         pdf.multi_cell(0, 6, pdf._f(status))
